@@ -50,13 +50,11 @@ Follow these steps to run Ocular Loop locally.
 
 ### 1. Prerequisites
 
-Ensure you have:
-
-- **Python 3.10–3.13 installed**  
-  ⚠️ Python 3.14 is not supported
+Ensure you have Python3 installed
 
 ```bash
 python3 --version
+```
 
 python3 -m venv venv
 
