@@ -50,71 +50,77 @@
   </div>
 </div>
 
+<div id="modal-instructions" class="modal hidden">
+  <div class="modal-card instruction-container">
+    
+    <div class="instr-card active">
+      <div class="card-icon">🎯</div>
+      <h3>Calibration Guide</h3>
+      <p>Before we begin the exercise, we need to map the tracker to your eyes. This takes about 30 seconds.</p>
+      <button class="btn-primary next-instr" style="margin-top: 10px;">Next: The Dots</button>
+    </div>
+
+    <div class="instr-card">
+      <div class="color-swatch swatch-yellow"></div>
+      <h3>Step 1: Focus (Yellow)</h3>
+      <p>A <strong>Yellow</strong> dot will appear. Move your eyes to focus on it immediately.</p>
+      <p><small>🔊 You will hear 3 short <strong>low-pitched beeps</strong> as a countdown.</small></p>
+      <button class="btn-primary next-instr">Got it</button>
+    </div>
+
+    <div class="instr-card">
+      <div class="color-swatch swatch-blue"></div>
+      <h3>Step 2: Hold (Blue)</h3>
+      <p>The dot will turn <strong>Blue</strong>. Hold your gaze perfectly still until it disappears.</p>
+      <p><small>🔊 You will hear a <strong>steady high-pitched tone</strong> while data is being captured.</small></p>
+      <button class="btn-primary next-instr">I'm ready</button>
+    </div>
+
+    <div class="instr-card">
+      <div class="color-swatch swatch-green"></div>
+      <h3>Step 3: Success (Green)</h3>
+      <p>Points you have completed successfully will flash <strong>Green</strong>.</p>
+      <button class="btn-primary next-instr" style="margin-top: 10px;">Continue</button>
+    </div>
+
+    <div class="instr-card">
+      <div class="color-swatch swatch-pink"></div>
+      <h3>Final: The Exercise (Pink)</h3>
+      <p>Once all 9 points are done, the <strong>Pink</strong> dot will appear and start moving.</p>
+      <p>Ignore all other dots and follow <strong>only</strong> the pink target!</p>
+      <p><small>🔊 A <strong>rising chime</strong> will signal the start of the session.</small></p>
+      <button id="btn-start-calib-now" class="btn-primary">Start Calibration</button>
+    </div>
+
+  </div>
+</div>
 
 <div id="screen-calibrate" class="screen">
   <canvas id="calib-canvas"></canvas>
-  <div id="calib-hud">
-    <div id="calib-instruction">Look at the dot and hold still</div>
-    <div id="calib-progress">Point 0 / 9</div>
-  </div>
   <div id="gaze-dot" class="gaze-dot hidden"></div>
 </div>
 
-
 <div id="screen-session" class="screen">
   <canvas id="session-canvas"></canvas>
-
   <div id="session-gaze-dot" class="gaze-dot"></div>
-
   <div class="session-hud-top">
-    <div class="hud-pill">
-      <span class="hud-label">MODE</span>
-      <span id="hud-mode">—</span>
-    </div>
-    <div class="hud-pill">
-      <span class="hud-label">TIME</span>
-      <span id="hud-time">0:00</span>
-    </div>
+    <div class="hud-pill"><span class="hud-label">MODE</span><span id="hud-mode">—</span></div>
+    <div class="hud-pill"><span class="hud-label">TIME</span><span id="hud-time">0:00</span></div>
     <button id="btn-stop-session" class="btn-danger-sm">Stop</button>
   </div>
-
   <div class="metrics-panel">
-    <div class="metric-row">
-      <span class="metric-label">Accuracy</span>
-      <div class="metric-bar-wrap">
-        <div class="metric-bar" id="bar-accuracy"></div>
-      </div>
-      <span class="metric-val" id="val-accuracy">—</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-label">Smoothness</span>
-      <div class="metric-bar-wrap">
-        <div class="metric-bar" id="bar-smoothness"></div>
-      </div>
-      <span class="metric-val" id="val-smoothness">—</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-label">Stability</span>
-      <div class="metric-bar-wrap">
-        <div class="metric-bar" id="bar-stability"></div>
-      </div>
-      <span class="metric-val" id="val-stability">—</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-label">Latency</span>
-      <span class="metric-val wide" id="val-latency">—</span>
-    </div>
-
+    <div class="metric-row"><span class="metric-label">Accuracy</span><div class="metric-bar-wrap"><div class="metric-bar" id="bar-accuracy"></div></div><span class="metric-val" id="val-accuracy">—</span></div>
+    <div class="metric-row"><span class="metric-label">Smoothness</span><div class="metric-bar-wrap"><div class="metric-bar" id="bar-smoothness"></div></div><span class="metric-val" id="val-smoothness">—</span></div>
+    <div class="metric-row"><span class="metric-label">Stability</span><div class="metric-bar-wrap"><div class="metric-bar" id="bar-stability"></div></div><span class="metric-val" id="val-stability">—</span></div>
+    <div class="metric-row"><span class="metric-label">Latency</span><span class="metric-val wide" id="val-latency">—</span></div>
     <div class="score-ring-wrap">
       <canvas id="score-ring" width="110" height="110"></canvas>
       <div class="score-number" id="score-number">—</div>
       <div class="score-label">SCORE</div>
     </div>
-
     <canvas id="score-chart" width="200" height="60"></canvas>
   </div>
 </div>
-
 
 <div id="screen-results" class="screen">
   <div class="results-card">
@@ -135,18 +141,12 @@
   </div>
 </div>
 
-
 <div id="modal-history" class="modal hidden">
   <div class="modal-card">
     <h3>Session History</h3>
     <div id="history-list"></div>
     <button id="btn-close-history" class="btn-secondary">Close</button>
   </div>
-</div>
-
-<div id="loading-overlay" class="hidden">
-  <div class="spinner"></div>
-  <div id="loading-msg">Starting camera…</div>
 </div>
 
 <script src="/static/js/app.js"></script>
