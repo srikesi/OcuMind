@@ -9,9 +9,6 @@
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════ SCREENS ══════════ -->
-
-<!-- ① Welcome screen -->
 <div id="screen-welcome" class="screen active">
   <div class="welcome-card">
     <div class="logo">👁 OcuMind</div>
@@ -45,7 +42,6 @@
 </div>
 
 
-<!-- ② Calibration screen -->
 <div id="screen-calibrate" class="screen">
   <canvas id="calib-canvas"></canvas>
   <div id="calib-hud">
@@ -56,14 +52,11 @@
 </div>
 
 
-<!-- ③ Training session screen -->
 <div id="screen-session" class="screen">
   <canvas id="session-canvas"></canvas>
 
-  <!-- Gaze dot overlay -->
   <div id="session-gaze-dot" class="gaze-dot"></div>
 
-  <!-- HUD top-left -->
   <div class="session-hud-top">
     <div class="hud-pill">
       <span class="hud-label">MODE</span>
@@ -76,7 +69,6 @@
     <button id="btn-stop-session" class="btn-danger-sm">■ Stop</button>
   </div>
 
-  <!-- Metrics panel -->
   <div class="metrics-panel">
     <div class="metric-row">
       <span class="metric-label">🎯 Accuracy</span>
@@ -110,13 +102,11 @@
       <div class="score-label">SCORE</div>
     </div>
 
-    <!-- Mini sparkline chart -->
     <canvas id="score-chart" width="200" height="60"></canvas>
   </div>
 </div>
 
 
-<!-- ④ Results screen -->
 <div id="screen-results" class="screen">
   <div class="results-card">
     <h2>Session Complete 🏁</h2>
@@ -137,7 +127,6 @@
 </div>
 
 
-<!-- ⑤ History modal -->
 <div id="modal-history" class="modal hidden">
   <div class="modal-card">
     <h3>Session History</h3>
@@ -146,7 +135,19 @@
   </div>
 </div>
 
-<!-- Loading overlay -->
+<div id="calibration-instructions" class="modal-overlay">
+    <div class="instruction-card">
+        <h2 id="inst-title">Calibration Setup</h2>
+        <p id="inst-text">Welcome! Let's calibrate the eye tracker.</p>
+        
+        <div class="dot-preview-container" id="dot-preview" style="display: none;">
+            <div class="calib-dot preview-dot" id="preview-dot-element"></div>
+        </div>
+
+        <button id="inst-next-btn">Next</button>
+    </div>
+</div>
+
 <div id="loading-overlay" class="hidden">
   <div class="spinner"></div>
   <div id="loading-msg">Starting camera…</div>

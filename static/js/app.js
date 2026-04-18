@@ -45,6 +45,108 @@ window.addEventListener("resize", resizeCanvases);
 resizeCanvases();
 
 // ════════════════════════════════════════════════════════════════
+//  AUDIO ENGINE & TUTORIAL INSTRUCTIONS
+// ════════════════════════════════════════════════════════════════
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+// Helper to generate a rich, resonant chime sound
+function playChimeNote(freq, startTime) {
+  // Master volume control for this note
+  const masterGain = audioCtx.createGain();
+  masterGain.connect(audioCtx.destination);
+  
+  // Set to a louder volume (0.4) and create a long 1.5s fade out for the "ring"
+  masterGain.gain.setValueAtTime(0.4, startTime);
+  masterGain.gain.exponentialRampToValueAtTime(0.001, startTime + 1.5);
+
+  // Oscillator 1: The fundamental tone (Smooth sine wave)
+  const osc1 = audioCtx.createOscillator();
+  osc1.type = 'sine';
+  osc1.frequency.setValueAtTime(freq, startTime);
+  osc1.connect(masterGain);
+
+  // Oscillator 2: The bright "ping" (Triangle wave, slightly detuned octave up)
+  const osc2 = audioCtx.createOscillator();
+  const osc2Gain = audioCtx.createGain();
+  osc2Gain.gain.setValueAtTime(0.25, startTime); // Mix the bright ping in slightly quieter
+  osc2.type = 'triangle';
+  osc2.frequency.setValueAtTime(freq * 2.01, startTime); 
+  osc2.connect(osc2Gain);
+  osc2Gain.connect(masterGain);
+
+  // Start and stop oscillators
+  osc1.start(startTime);
+  osc2.start(startTime);
+  osc1.stop(startTime + 1.5);
+  osc2.stop(startTime + 1.5);
+}
+
+function playDing() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  // Play a single bright chime note (E5) immediately
+  playChimeNote(659.25, audioCtx.currentTime); 
+}
+
+function playSuccessMelody() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const now = audioCtx.currentTime;
+  
+  // A triumphant arpeggio sequence using the new chime sound (C5, E5, G5, C6)
+  const notes = [523.25, 659.25, 783.99, 1046.50]; 
+  
+  notes.forEach((freq, i) => {
+    // Schedule each note 0.12 seconds apart
+    playChimeNote(freq, now + (i * 0.12));
+  });
+}
+
+const calibSteps = [
+  { text: "Welcome! Let's calibrate the eye tracker.", preview: "none", btn: "Next" },
+  { text: "Look directly at the dot when it is YELLOW.", preview: "#fbbf24", btn: "Next" },
+  { text: "Keep holding your gaze. It will turn BLUE while calibrating.", preview: "#38bdf8", btn: "Next" },
+  { text: "When it turns GREEN, you will hear a ding. Move to the next dot!", preview: "#34d399", btn: "Next" },
+  { text: "After all 9 dots are complete, the actual exercise will start. Follow and focus ONLY on the pink dot!", preview: "#f472b6", btn: "Start Calibration" }
+];
+let currentStep = 0;
+
+function showInstructionCards() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  currentStep = 0;
+  document.getElementById('calibration-instructions').style.display = 'flex';
+  renderInstructionStep();
+}
+
+function renderInstructionStep() {
+  const step = calibSteps[currentStep];
+  document.getElementById('inst-text').innerText = step.text;
+  document.getElementById('inst-next-btn').innerText = step.btn;
+
+  const previewContainer = document.getElementById('dot-preview');
+  const previewDot = document.getElementById('preview-dot-element');
+
+  if (step.preview === "none") {
+    previewContainer.style.display = "none";
+  } else {
+    previewContainer.style.display = "flex";
+    previewDot.style.backgroundColor = step.preview;
+  }
+}
+
+function nextInstruction() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  currentStep++;
+  
+  if (currentStep >= calibSteps.length) {
+    document.getElementById('calibration-instructions').style.display = 'none';
+    startCalibration();
+  } else {
+    renderInstructionStep();
+  }
+}
+
+document.getElementById('inst-next-btn').addEventListener('click', nextInstruction);
+
+// ════════════════════════════════════════════════════════════════
 //  CLIENT-SIDE METRICS ENGINE
 // ════════════════════════════════════════════════════════════════
 const Metrics = {
@@ -130,7 +232,7 @@ modeButtons.forEach(btn => {
   });
 });
 
-btnCalibrate.addEventListener("click", startCalibration);
+btnCalibrate.addEventListener("click", showInstructionCards);
 btnSkip.addEventListener("click", () => { state.calibrated = false; startSession(); });
 btnHistory.addEventListener("click", showHistory);
 document.getElementById("btn-close-history").addEventListener("click", () => {
@@ -166,8 +268,6 @@ function placeGazeDots(nx, ny) {
   const px = nx * window.innerWidth;
   const py = ny * window.innerHeight;
   
-  // UX FIX: We ONLY show the gaze dot on the Welcome screen and Session screen.
-  // Showing it during calibration creates a visual distraction loop.
   if (state.screen === "welcome") {
       gazeCalibDot.style.left = px + "px";
       gazeCalibDot.style.top  = py + "px";
@@ -201,7 +301,6 @@ function startCalibration() {
   calibIdx = 0;
   showScreen("calibrate");
   
-  // UX FIX: Hide the uncalibrated dot so you don't try to steer it with your head.
   gazeCalibDot.classList.add("hidden"); 
   setTimeout(showCalibPoint, 500);
 }
@@ -225,7 +324,12 @@ function showCalibPoint() {
   tick();
 }
 
-socket.on("calib_point_done", () => { calibIdx++; setTimeout(showCalibPoint, 350); });
+socket.on("calib_point_done", () => { 
+  playDing(); // AUDIO FEEDBACK TRIGGERED HERE
+  calibIdx++; 
+  setTimeout(showCalibPoint, 350); 
+});
+
 socket.on("calib_auto_commit", () => { clearTimeout(calibTimer); socket.emit("calib_commit_point"); });
 
 function finishCalibration() {
@@ -235,6 +339,7 @@ function finishCalibration() {
 socket.on("calib_result", ({ ok }) => {
   if (ok) {
     state.calibrated = true;
+    playSuccessMelody(); // FINAL SUCCESS AUDIO TRIGGERED HERE
     document.getElementById("calib-instruction").textContent = "✅ Done!";
     setTimeout(startSession, 800);
   } else {
