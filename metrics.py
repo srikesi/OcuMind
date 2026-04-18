@@ -8,7 +8,7 @@ Metrics computed
 accuracy    : mean Euclidean error (gaze vs target), 0 = perfect, 1 = worst
 smoothness  : 1 - normalised velocity variance  (1 = perfectly smooth)
 latency_ms  : estimated gaze lag behind target via cross-correlation
-stability   : mean fixation drift during stationary target phases
+stability   : measures tracking jitter (variance of the error)
 score       : 0-100 composite score suitable for progress tracking
 """
 
@@ -16,14 +16,13 @@ import numpy as np
 from collections import deque
 from typing import Optional, Tuple
 
-
 _EPS = 1e-9
 
 # Rolling window lengths
-_WIN_ACCURACY   = 60   # frames (~2 s at 30 fps)
+_WIN_ACCURACY   = 60   # frames (~1 s at 60 fps)
 _WIN_SMOOTH     = 30
 _WIN_STABILITY  = 30
-_MAX_LAG_FRAMES = 45   # max lag to search (1.5 s)
+_MAX_LAG_FRAMES = 45   # max lag to search
 
 
 class MetricsEngine:
@@ -41,7 +40,7 @@ class MetricsEngine:
         """
         Call once per frame with calibrated gaze + current target position.
         """
-        ts = len(self._gaze_buf)          # virtual frame index
+        ts = len(self._gaze_buf)
 
         self._gaze_buf.append((gaze_x, gaze_y))
         self._target_buf.append((target_x, target_y))
@@ -56,9 +55,8 @@ class MetricsEngine:
             vel  = _dist(gaze_x, gaze_y, prev[0], prev[1])
             self._vel_buf.append(vel)
 
-        # Stability: accumulate only when target is stationary
-        if not target_moving:
-            self._stability_buf.append(err)
+        # Stability: track the error variance to measure jitter
+        self._stability_buf.append(err)
 
         self._frame_count += 1
 
@@ -97,7 +95,6 @@ class MetricsEngine:
             return 1.0
         vels = np.array(self._vel_buf)
         var  = float(np.std(vels))
-        # Normalise: typical jitter std ~0.03 → score 0.4, std ~0 → score 1.0
         smooth = 1.0 - np.clip(var / 0.05, 0.0, 1.0)
         return float(smooth)
 
@@ -108,41 +105,61 @@ class MetricsEngine:
     @property
     def latency_frames(self) -> int:
         """
-        Estimated gaze lag (in frames) via cross-correlation of target and
-        gaze x-trajectories. Returns 0 if insufficient data.
+        Estimated gaze lag (in frames) via Pearson cross-correlation.
         """
         if len(self._gaze_buf) < _MAX_LAG_FRAMES * 2:
             return 0
+            
         g = np.array([p[0] for p in self._gaze_buf])
         t = np.array([p[0] for p in self._target_buf])
-        corr = np.correlate(g - g.mean(), t - t.mean(), mode="full")
-        lags  = np.arange(-(len(g) - 1), len(t))
-        # Only look at positive lags (gaze behind target)
-        pos_mask = (lags >= 0) & (lags <= _MAX_LAG_FRAMES)
-        if not pos_mask.any():
+        
+        # Avoid division by zero if there's no movement
+        if np.std(g) < 1e-3 or np.std(t) < 1e-3:
             return 0
-        best = int(lags[pos_mask][np.argmax(corr[pos_mask])])
-        return best
+            
+        best_lag = 0
+        max_corr = -float('inf')
+        
+        # Shift target back in time to see where it best aligns with current gaze
+        for lag in range(_MAX_LAG_FRAMES + 1):
+            if lag == 0:
+                corr = np.corrcoef(g, t)[0, 1]
+            else:
+                corr = np.corrcoef(g[lag:], t[:-lag])[0, 1]
+                
+            if corr > max_corr:
+                max_corr = corr
+                best_lag = lag
+                
+        # If correlation is weak, don't trust the lag calculation
+        if max_corr < 0.3:
+            return 0
+            
+        return best_lag
 
     @property
     def latency_ms(self) -> float:
-        """Approximate lag in milliseconds (assumes 30 fps)."""
-        return float(self.latency_frames * (1000.0 / 30.0))
+        """
+        Approximate lag in milliseconds. 
+        Frontend requestAnimationFrame emits at ~60fps (1000/60 ms per frame).
+        """
+        return float(self.latency_frames * (1000.0 / 60.0))
 
     @property
     def stability(self) -> float:
         """
-        Mean fixation error during stationary target phases.
-        Lower = more stable fixation.
+        Standard deviation of the Euclidean error over the recent window.
+        Measures how consistent the tracking is (jitter). Lower = more stable.
         """
-        if not self._stability_buf:
+        if len(self._stability_buf) < 3:
             return 0.0
-        return float(np.mean(self._stability_buf))
+        return float(np.std(self._stability_buf))
 
     @property
     def stability_pct(self) -> float:
-        """Stability score 0–100 where 100 = rock-steady."""
-        return float(np.clip((1.0 - self.stability / 0.3) * 100.0, 0.0, 100.0))
+        """Stability score 0–100 where 100 = rock-steady (low variance)."""
+        # A standard deviation of 0.1 in screen fraction is high instability.
+        return float(np.clip((1.0 - self.stability / 0.1) * 100.0, 0.0, 100.0))
 
     @property
     def score(self) -> float:
@@ -166,7 +183,6 @@ class MetricsEngine:
             "score":         round(self.score,            1),
             "frame":         self._frame_count,
         }
-
 
 # ------------------------------------------------------------------ #
 #  Helpers                                                             #

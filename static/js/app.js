@@ -34,6 +34,15 @@ const state = {
   lastGazeTime: 0,
 };
 
+// Replace local mock metrics engine with a state object synced via WebSocket
+let latestMetrics = {
+  accuracy: 0,
+  smoothness: 0,
+  stability: 0,
+  score: 0,
+  latency_ms: 0
+};
+
 const screens = {
   welcome:   document.getElementById("screen-welcome"),
   calibrate: document.getElementById("screen-calibrate"),
@@ -51,7 +60,6 @@ const scoreRingCtx     = scoreRingCanvas.getContext("2d");
 const scoreChartCanvas = document.getElementById("score-chart");
 const scoreChartCtx    = scoreChartCanvas.getContext("2d");
 
-// Instruction Modal Elements
 const instrModal  = document.getElementById("modal-instructions");
 const instrCards  = document.querySelectorAll(".instr-card");
 const nextButtons = document.querySelectorAll(".next-instr");
@@ -65,48 +73,6 @@ function resizeCanvases() {
 }
 window.addEventListener("resize", resizeCanvases);
 resizeCanvases();
-
-const Metrics = {
-  errorBuf: [], velBuf: [], prevGaze: null,
-  reset() { this.errorBuf = []; this.velBuf = []; this.prevGaze = null; },
-  update(gx, gy, tx, ty) {
-    const err = Math.hypot(gx - tx, gy - ty);
-    this.errorBuf.push(err);
-    if (this.errorBuf.length > 90) this.errorBuf.shift();
-    if (this.prevGaze) {
-      const vel = Math.hypot(gx - this.prevGaze[0], gy - this.prevGaze[1]);
-      this.velBuf.push(vel);
-      if (this.velBuf.length > 30) this.velBuf.shift();
-    }
-    this.prevGaze = [gx, gy];
-  },
-  get accuracy() {
-    if (!this.errorBuf.length) return 0;
-    const mean = this.errorBuf.reduce((a, b) => a + b, 0) / this.errorBuf.length;
-    return Math.max(0, Math.min(100, (1 - mean / 0.45) * 100));
-  },
-  get smoothness() {
-    if (this.velBuf.length < 4) return 0;
-    const mean = this.velBuf.reduce((a, b) => a + b, 0) / this.velBuf.length;
-    const std  = Math.sqrt(this.velBuf.reduce((a, b) => a + (b - mean) ** 2, 0) / this.velBuf.length);
-    return Math.max(0, Math.min(100, (1 - std / 0.05) * 100));
-  },
-  get stability() {
-    if (!this.errorBuf.length) return 0;
-    const recent = this.errorBuf.slice(-30);
-    const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
-    return Math.max(0, Math.min(100, (1 - mean / 0.3) * 100));
-  },
-  get score() { return 0.5 * this.accuracy + 0.3 * this.smoothness + 0.2 * this.stability; },
-  snapshot() {
-    return {
-      accuracy:   Math.round(this.accuracy  * 10) / 10,
-      smoothness: Math.round(this.smoothness * 10) / 10,
-      stability:  Math.round(this.stability  * 10) / 10,
-      score:      Math.round(this.score      * 10) / 10,
-    };
-  },
-};
 
 function showScreen(name) {
   Object.entries(screens).forEach(([k, el]) => el.classList.toggle("active", k === name));
@@ -171,8 +137,9 @@ btnCalibrate.addEventListener("click", () => {
 function runCountdown(callback) {
   const overlay = document.getElementById("countdown-overlay");
   const text = document.getElementById("countdown-text");
-  overlay.classList.remove("hidden");
+  if (!overlay) return callback(); // Safety if element is missing
   
+  overlay.classList.remove("hidden");
   let count = 3;
   const tick = () => {
     if (count > 0) {
@@ -241,6 +208,15 @@ socket.on("gaze_raw", (data) => {
   state.lastGazeTime = Date.now();
   
   placeGazeDots(gx, gy);
+});
+
+// Update UI directly from backend's robust python calculations!
+socket.on("metrics_update", data => {
+  if (!state.sessionActive) return;
+  latestMetrics = data;
+  state.scoreHistory.push(data.score);
+  if (state.scoreHistory.length > 300) state.scoreHistory.shift();
+  updateMetricsPanel(data);
 });
 
 function placeGazeDots(nx, ny) {
@@ -362,7 +338,6 @@ const patterns = {
     return { x: 0.1 + dir * 0.8, y: 0.5 + 0.3 * Math.sin(t * 3 * state.speed), moving: true }; 
   },
   speed_changes: t => {
-    // Math to warp time forward and back smoothly, creating speed oscillation
     const tWarp = t * state.speed + 0.6 * Math.sin(t * state.speed * 1.5);
     return { 
       x: 0.5 + 0.35 * Math.cos(tWarp * 0.6), 
@@ -386,7 +361,7 @@ const patterns = {
     y: 0.5, 
     moving: false 
   }),
-  follow_color: t => ({ // Main target moving smoothly
+  follow_color: t => ({
     x: 0.5 + 0.3 * Math.cos(t * 0.7 * state.speed) + 0.1 * Math.sin(t * 0.3 * state.speed), 
     y: 0.5 + 0.2 * Math.sin(t * 0.5 * state.speed) + 0.1 * Math.cos(t * 0.8 * state.speed), 
     moving: true 
@@ -396,8 +371,14 @@ const patterns = {
 let animFrame = null; let stopTimer = null;
 
 function startSession() {
-  state.sessionActive = true; state.sessionStart = performance.now(); state.scoreHistory = [];
-  Metrics.reset();
+  state.sessionActive = true; 
+  state.sessionStart = performance.now(); 
+  state.scoreHistory = [];
+  
+  // Reset Latest Metrics
+  latestMetrics = { accuracy: 0, smoothness: 0, stability: 0, score: 0, latency_ms: 0 };
+  updateMetricsPanel(latestMetrics);
+
   socket.emit("session_start", { mode: state.mode });
   showScreen("session");
   document.getElementById("hud-mode").textContent = state.mode.replace("_", " ").toUpperCase();
@@ -427,12 +408,6 @@ function renderLoop(now) {
   const pos = pat(elapsed);
   target.x = pos.x; target.y = pos.y; target.moving = pos.moving;
   
-  Metrics.update(state.gazeX, state.gazeY, target.x, target.y);
-  const snap = Metrics.snapshot();
-  state.scoreHistory.push(snap.score);
-  if (state.scoreHistory.length > 300) state.scoreHistory.shift();
-  
-  updateMetricsPanel(snap);
   drawSession(elapsed);
   
   socket.emit("session_frame", { target_x: target.x, target_y: target.y, moving: target.moving, elapsed });
@@ -444,13 +419,11 @@ function drawSession(elapsed) {
   sessionCtx.clearRect(0, 0, W, H);
   sessionCtx.strokeStyle = "rgba(42,58,85,0.25)"; sessionCtx.lineWidth = 1;
   
-  // Background grid
   for (let i = 1; i < 10; i++) {
     sessionCtx.beginPath(); sessionCtx.moveTo(i * W / 10, 0); sessionCtx.lineTo(i * W / 10, H); sessionCtx.stroke();
     sessionCtx.beginPath(); sessionCtx.moveTo(0, i * H / 10); sessionCtx.lineTo(W, i * H / 10); sessionCtx.stroke();
   }
   
-  // Trail effect (skip for fixation and random, makes it cleaner)
   if (state.mode !== "fixation" && state.mode !== "random") {
     for (let i = 0; i < 40; i++) {
       const t2 = Math.max(0, elapsed - (40 - i) * 0.025); 
@@ -460,7 +433,6 @@ function drawSession(elapsed) {
     }
   }
 
-  // Draw colorful distractors for 'follow_color' mode
   if (state.mode === "follow_color") {
     const distractors = [
       { c: "#34d399", x: 0.5 + 0.35 * Math.sin(elapsed * 0.6 * state.speed), y: 0.5 + 0.25 * Math.cos(elapsed * 0.8 * state.speed) },
@@ -476,7 +448,6 @@ function drawSession(elapsed) {
     });
   }
   
-  // Main target dot
   const pulse = 1 + 0.15 * Math.sin(elapsed * 5); const tx = target.x * W, ty = target.y * H;
   const g = sessionCtx.createRadialGradient(tx, ty, 0, tx, ty, 24 * pulse);
   g.addColorStop(0, "rgba(244,114,182,0.85)"); g.addColorStop(1, "rgba(244,114,182,0)");
@@ -484,7 +455,6 @@ function drawSession(elapsed) {
   sessionCtx.beginPath(); sessionCtx.arc(tx, ty, 10, 0, Math.PI * 2); sessionCtx.fillStyle = "#f472b6"; sessionCtx.fill();
   sessionCtx.strokeStyle = "#fff"; sessionCtx.lineWidth = 1.5; sessionCtx.stroke();
   
-  // Player gaze visualization
   if ((Date.now() - state.lastGazeTime) < 500) {
     const gx = state.gazeX * W, gy = state.gazeY * H;
     sessionCtx.strokeStyle = "rgba(56,189,248,0.35)"; sessionCtx.lineWidth = 1;
@@ -503,7 +473,12 @@ function updateMetricsPanel(d) {
   setBar("accuracy", d.accuracy, d.accuracy); 
   setBar("smoothness", d.smoothness, d.smoothness); 
   setBar("stability", d.stability, d.stability);
-  document.getElementById("val-latency").textContent = "live";
+  
+  // Use the real backend latency calculated from the stream
+  document.getElementById("val-latency").textContent = d.latency_ms !== undefined && d.latency_ms > 0 
+      ? Math.round(d.latency_ms) + " ms" 
+      : "live";
+      
   drawScoreRing(d.score); 
   document.getElementById("score-number").textContent = Math.round(d.score);
   drawSparkline();
@@ -542,13 +517,12 @@ function drawSparkline() {
 }
 
 function showResults(summary) {
-  const snap = Metrics.snapshot();
   showScreen("results");
-  document.getElementById("res-score").textContent  = (summary.final_score  ?? snap.score).toFixed(1);
-  document.getElementById("res-acc").textContent    = (summary.accuracy     ?? snap.accuracy).toFixed(1) + "%";
-  document.getElementById("res-smooth").textContent = (summary.smoothness   ?? snap.smoothness).toFixed(1) + "%";
-  document.getElementById("res-stab").textContent   = (summary.stability    ?? snap.stability).toFixed(1) + "%";
-  document.getElementById("res-lat").textContent    = (summary.latency_ms   ?? 0).toFixed(0) + " ms";
+  document.getElementById("res-score").textContent  = (summary.final_score  ?? latestMetrics.score).toFixed(1);
+  document.getElementById("res-acc").textContent    = (summary.accuracy     ?? latestMetrics.accuracy).toFixed(1) + "%";
+  document.getElementById("res-smooth").textContent = (summary.smoothness   ?? latestMetrics.smoothness).toFixed(1) + "%";
+  document.getElementById("res-stab").textContent   = (summary.stability    ?? latestMetrics.stability).toFixed(1) + "%";
+  document.getElementById("res-lat").textContent    = (summary.latency_ms   ?? latestMetrics.latency_ms ?? 0).toFixed(0) + " ms";
   document.getElementById("res-dur").textContent    = (summary.duration_s   ?? "—") + " s";
   state.sessionId = summary.session_id;
 }
