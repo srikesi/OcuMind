@@ -327,15 +327,12 @@ function renderLoop(now) {
   const pos = pat(elapsed);
   target.x = pos.x; target.y = pos.y; target.moving = pos.moving;
 
-  // ── Client-side metrics update ──────────────────────────────
-  const gazeDetectedRecently = (Date.now() - state.lastGazeTime) < 500;
-  if (gazeDetectedRecently) {
-    Metrics.update(state.gazeX, state.gazeY, target.x, target.y);
-    const snap = Metrics.snapshot();
-    state.scoreHistory.push(snap.score);
-    if (state.scoreHistory.length > 300) state.scoreHistory.shift();
-    updateMetricsPanel(snap);
-  }
+  // ── Client-side metrics — always update every frame ─────────
+  Metrics.update(state.gazeX, state.gazeY, target.x, target.y);
+  const snap = Metrics.snapshot();
+  state.scoreHistory.push(snap.score);
+  if (state.scoreHistory.length > 300) state.scoreHistory.shift();
+  updateMetricsPanel(snap);
 
   drawSession(elapsed);
 
