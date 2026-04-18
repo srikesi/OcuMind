@@ -8,6 +8,7 @@ import threading
 import time
 import os
 import urllib.request
+import math
 
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
@@ -27,8 +28,14 @@ def _ensure_model():
 
 LEFT_IRIS  = [468, 469, 470, 471, 472]
 RIGHT_IRIS = [473, 474, 475, 476, 477]
+
+# Horizontal Eye Corners (for X/Y anchoring)
 LEFT_EYE_CORNERS  = [33, 133]
 RIGHT_EYE_CORNERS = [362, 263]
+
+# Vertical Eyelid Landmarks (for Blink Detection)
+LEFT_EYE_VERTICAL = [159, 145]
+RIGHT_EYE_VERTICAL = [386, 374]
 
 class GazeTracker:
     def __init__(self, camera_index: int = 0):
@@ -52,6 +59,7 @@ class GazeTracker:
         }
         self._smooth_buf = []
         self._smooth_n   = 8
+        self._blink_cooldown = 0  # NEW: Tracks how long to freeze the dot after a blink
 
     def start(self):
         self._init_mediapipe()
@@ -163,6 +171,36 @@ class GazeTracker:
             print(f"[OcuMind] callback error: {e}")
 
     def _raw_iris_gaze(self, lm) -> dict:
+        
+        # --- NEW: ANTI-JERK BLINK DETECTION ---
+        def get_ear(h_corners, v_corners):
+            width = math.hypot(lm[h_corners[0]].x - lm[h_corners[1]].x, lm[h_corners[0]].y - lm[h_corners[1]].y) or 0.001
+            height = math.hypot(lm[v_corners[0]].x - lm[v_corners[1]].x, lm[v_corners[0]].y - lm[v_corners[1]].y)
+            return height / width
+
+        left_ear = get_ear(LEFT_EYE_CORNERS, LEFT_EYE_VERTICAL)
+        right_ear = get_ear(RIGHT_EYE_CORNERS, RIGHT_EYE_VERTICAL)
+
+        # Increased threshold to 0.26 to catch the blink BEFORE the eyelid drags the iris down
+        if left_ear < 0.26 or right_ear < 0.26:
+            if self._blink_cooldown == 0 and len(self._smooth_buf) > 2:
+                # "Time Machine" logic: delete the last 2 frames because they are likely corrupted by the half-blink
+                self._smooth_buf = self._smooth_buf[:-2]
+            
+            # Freeze the dot for 5 frames (~160ms) to let the eye fully reopen smoothly
+            self._blink_cooldown = 5 
+
+        # If we are in a blink or opening cooldown, return the frozen buffer value
+        if self._blink_cooldown > 0:
+            self._blink_cooldown -= 1
+            if len(self._smooth_buf) > 0:
+                sx = float(np.mean([p[0] for p in self._smooth_buf]))
+                sy = float(np.mean([p[1] for p in self._smooth_buf]))
+                return {"x": sx, "y": sy, "raw_x": sx, "raw_y": sy}
+            else:
+                return {"x": 0.5, "y": 0.5, "raw_x": 0.5, "raw_y": 0.5}
+        # --------------------------------------
+
         def get_ratio(iris_indices, h_corners):
             ix = float(np.mean([lm[i].x for i in iris_indices]))
             iy = float(np.mean([lm[i].y for i in iris_indices]))
@@ -173,17 +211,12 @@ class GazeTracker:
             center_y = (cy1 + cy2) / 2.0
             width = abs(cx2 - cx1) or 0.001
             
-            # MATH FIX: Multipliers heavily increased to give your eyes a wider natural 
-            # range of motion before calibration even starts.
-            rx = ((ix - center_x) / width) * 3.0 + 0.5
-            ry = (((iy - center_y) / width) * 4.0) + 0.5
+            rx = ((ix - center_x) / width) * 12.0 + 0.5
+            ry = (((iy - center_y) / width) * 16.0) + 0.5
             return rx, ry
 
-        LEFT_H = [33, 133]    
-        RIGHT_H = [362, 263]
-
-        lx, ly = get_ratio(LEFT_IRIS, LEFT_H)
-        rx, ry = get_ratio(RIGHT_IRIS, RIGHT_H)
+        lx, ly = get_ratio(LEFT_IRIS, LEFT_EYE_CORNERS)
+        rx, ry = get_ratio(RIGHT_IRIS, RIGHT_EYE_CORNERS)
 
         rel_x = (lx + rx) / 2.0
         rel_y = (ly + ry) / 2.0
@@ -227,8 +260,6 @@ class GazeTracker:
         if len(self._smooth_buf) > self._smooth_n:
             self._smooth_buf.pop(0)
         
-        # MATH FIX: We no longer clamp raw coordinates here. We let the raw 
-        # range extend naturally so calibration has enough data to map properly.
         sx = float(np.mean([p[0] for p in self._smooth_buf]))
         sy = float(np.mean([p[1] for p in self._smooth_buf]))
         return {"x": sx, "y": sy, "raw_x": x, "raw_y": y}
