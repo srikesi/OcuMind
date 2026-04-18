@@ -1,5 +1,28 @@
 "use strict";
 
+// ── Audio Synthesizer (No external files needed) ────────────────
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(freq, type, duration) {
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  
+  // INCREASED VOLUME: Peak volume raised to 0.35
+  const peakVolume = 0.35; 
+  
+  // CHIME ENVELOPE: Quick attack, slow exponential release creates a natural "ring"
+  gain.gain.setValueAtTime(0, audioCtx.currentTime);
+  gain.gain.linearRampToValueAtTime(peakVolume, audioCtx.currentTime + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
 // ── SocketIO ────────────────────────────────────────────────────
 const socket = io({ transports: ["websocket"] });
 
@@ -169,13 +192,13 @@ socket.on("gaze_raw", (data) => {
   let gx = data.x;
   let gy = data.y;
 
-  // FIX 1: STRICT FIRST CLAMP
+  // STRICT FIRST CLAMP
   // Normalize wild coordinate spikes before doing any math
   if (isNaN(gx) || isNaN(gy)) return;
   gx = Math.max(0, Math.min(1, gx));
   gy = Math.max(0, Math.min(1, gy));
 
-  // FIX 2: BULLETPROOF MAGNETISM
+  // BULLETPROOF MAGNETISM
   // Only execute if explicitly in an active session
   if (state.screen === "session" && state.sessionActive) {
     const dx = target.x - gx;
@@ -200,10 +223,9 @@ socket.on("gaze_raw", (data) => {
 
 function placeGazeDots(nx, ny) {
   const px = nx * window.innerWidth;
-  const py = ny * window.innerHeight;
+  const py = window.innerHeight * ny; // Ensure we multiply ny correctly
   
-  // FIX 3: MASTER VISIBILITY SWITCH
-  // Eradicates the race condition. The Welcome Dot ONLY exists on the Welcome Screen.
+  // MASTER VISIBILITY SWITCH
   if (state.screen === "welcome") {
       gazeCalibDot.style.left = px + "px";
       gazeCalibDot.style.top  = py + "px";
@@ -214,7 +236,6 @@ function placeGazeDots(nx, ny) {
       gazeCalibDot.style.display = "none";
   }
 
-  // The Session Dot ONLY exists on the Session Screen.
   if (state.screen === "session") {
       gazeSessionDot.style.left = px + "px";
       gazeSessionDot.style.top  = py + "px";
@@ -252,10 +273,14 @@ function showCalibPoint() {
   let cd = 3;
   const tick = () => {
     document.getElementById("calib-instruction").textContent = `Look at the yellow dot — ${cd}`;
-    if (cd-- > 0) { calibTimer = setTimeout(tick, 700); }
+    if (cd-- > 0) { 
+      playSound(440, "sine", 0.15); // SOUND: Short subtle countdown beep
+      calibTimer = setTimeout(tick, 700); 
+    }
     else {
       drawCalibCanvas(calibIdx, "active");
       document.getElementById("calib-instruction").textContent = "Hold still…";
+      playSound(1046, "sine", 0.9); // SOUND: High, long ringing chime (C6)
       const [sx, sy] = CALIB_PTS[calibIdx];
       socket.emit("calib_start_point", { x: sx, y: sy });
       calibTimer = setTimeout(() => socket.emit("calib_commit_point"), 1200);
@@ -273,10 +298,17 @@ function finishCalibration() {
 }
 socket.on("calib_result", ({ ok }) => {
   if (ok) {
+    // SOUND: Triumphant Sequence of Chime Dings (C Major ascending)
+    playSound(523, "sine", 0.6); // C5
+    setTimeout(() => playSound(659, "sine", 0.6), 100); // E5
+    setTimeout(() => playSound(784, "sine", 0.6), 200); // G5
+    setTimeout(() => playSound(1046, "sine", 1.2), 300); // C6 with long ring
+
     state.calibrated = true;
     document.getElementById("calib-instruction").textContent = "✅ Done!";
     setTimeout(startSession, 800);
   } else {
+    playSound(200, "sawtooth", 0.4); // SOUND: Error buzz
     document.getElementById("calib-instruction").textContent = "⚠ Failed — try again.";
     setTimeout(() => showScreen("welcome"), 2000);
   }
@@ -340,6 +372,10 @@ let animFrame   = null;
 let stopTimer   = null;
 
 function startSession() {
+  // SOUND: Session Start chime
+  playSound(659, "sine", 0.2); 
+  setTimeout(() => playSound(1046, "sine", 0.8), 150);
+
   state.sessionActive = true;
   state.sessionStart  = performance.now();
   state.scoreHistory  = [];
@@ -356,6 +392,9 @@ document.getElementById("btn-stop-session").addEventListener("click", stopSessio
 
 function stopSession() {
   if (!state.sessionActive) return;
+  
+  playSound(400, "sine", 0.5); // SOUND: Session Stop tone
+
   state.sessionActive = false;
   clearTimeout(stopTimer);
   cancelAnimationFrame(animFrame);
