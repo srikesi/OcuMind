@@ -168,12 +168,38 @@ btnCalibrate.addEventListener("click", () => {
   instrModal.classList.remove("hidden");
 });
 
+function runCountdown(callback) {
+  const overlay = document.getElementById("countdown-overlay");
+  const text = document.getElementById("countdown-text");
+  overlay.classList.remove("hidden");
+  
+  let count = 3;
+  const tick = () => {
+    if (count > 0) {
+      text.textContent = count;
+      playSound(440, "sine", 0.1); 
+      count--;
+      setTimeout(tick, 1000);
+    } else {
+      overlay.classList.add("hidden");
+      callback();
+    }
+  };
+  tick();
+}
+
 document.getElementById("btn-start-calib-now").addEventListener("click", () => {
   instrModal.classList.add("hidden");
-  startCalibration();
+  showScreen("calibrate");
+  runCountdown(startCalibration);
 });
 
-btnSkip.addEventListener("click", () => { state.calibrated = false; startSession(); });
+btnSkip.addEventListener("click", () => { 
+  state.calibrated = false; 
+  showScreen("session");
+  runCountdown(startSession); 
+});
+
 btnHistory.addEventListener("click", showHistory);
 document.getElementById("btn-close-history").addEventListener("click", () => {
   document.getElementById("modal-history").classList.add("hidden");
@@ -285,7 +311,10 @@ socket.on("calib_result", ({ ok }) => {
     setTimeout(() => playSound(1046, "sine", 1.2), 450);
     
     state.calibrated = true;
-    setTimeout(startSession, 1200);
+    setTimeout(() => {
+      showScreen("session");
+      runCountdown(startSession);
+    }, 1200);
   } else {
     setTimeout(() => showScreen("welcome"), 2000);
   }
