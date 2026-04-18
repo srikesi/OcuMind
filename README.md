@@ -1,2 +1,2 @@
 # OcuMind
-Ishika Aggarwal, Marie Cho, 
+Ishika Aggarwal, Marie Cho, Sri Kesiraju
