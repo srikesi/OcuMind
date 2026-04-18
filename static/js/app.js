@@ -243,11 +243,11 @@ socket.on("connect", () => socket.emit("start_camera"));
 
 socket.on("camera_ready", ({ ok, error }) => {
   if (ok) {
-    cameraBadge.textContent = "✅ Camera ready";
+    cameraBadge.textContent = "Camera ready";
     cameraBadge.className   = "status-badge ok";
     btnCalibrate.disabled   = false;
   } else {
-    cameraBadge.textContent = `❌ Camera error: ${error}`;
+    cameraBadge.textContent = `Camera error: ${error}`;
     cameraBadge.className   = "status-badge err";
   }
 });
@@ -325,7 +325,7 @@ function showCalibPoint() {
 }
 
 socket.on("calib_point_done", () => { 
-  playDing(); // AUDIO FEEDBACK TRIGGERED HERE
+  playDing(); 
   calibIdx++; 
   setTimeout(showCalibPoint, 350); 
 });
@@ -339,11 +339,11 @@ function finishCalibration() {
 socket.on("calib_result", ({ ok }) => {
   if (ok) {
     state.calibrated = true;
-    playSuccessMelody(); // FINAL SUCCESS AUDIO TRIGGERED HERE
-    document.getElementById("calib-instruction").textContent = "✅ Done!";
+    playSuccessMelody(); 
+    document.getElementById("calib-instruction").textContent = "Done!";
     setTimeout(startSession, 800);
   } else {
-    document.getElementById("calib-instruction").textContent = "⚠ Failed — try again.";
+    document.getElementById("calib-instruction").textContent = "Failed — try again.";
     setTimeout(() => showScreen("welcome"), 2000);
   }
 });
@@ -510,7 +510,7 @@ function drawSession(elapsed) {
     sessionCtx.fillStyle = "rgba(248,113,113,0.8)";
     sessionCtx.font = "bold 15px system-ui";
     sessionCtx.textAlign = "center";
-    sessionCtx.fillText("⚠ Face not detected — check camera", W / 2, H - 30);
+    sessionCtx.fillText("Face not detected — check camera", W / 2, H - 30);
   }
 }
 
@@ -607,6 +607,6 @@ async function showHistory() {
 }
 
 socket.on("connect_error", () => {
-  cameraBadge.textContent = "❌ Server connection failed";
+  cameraBadge.textContent = "Server connection failed";
   cameraBadge.className   = "status-badge err";
 });
