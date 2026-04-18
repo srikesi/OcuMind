@@ -46,13 +46,11 @@ resizeCanvases();
 
 // ════════════════════════════════════════════════════════════════
 //  CLIENT-SIDE METRICS ENGINE
-//  Computes everything from gaze + target positions in JS —
-//  no server round-trip needed, always live.
 // ════════════════════════════════════════════════════════════════
 const Metrics = {
-  errorBuf:  [],   // rolling accuracy errors
-  velBuf:    [],   // rolling gaze velocities
-  prevGaze:  null, // [x, y]
+  errorBuf:  [],   
+  velBuf:    [],   
+  prevGaze:  null, 
 
   reset() {
     this.errorBuf = [];
@@ -87,7 +85,6 @@ const Metrics = {
   },
 
   get stability() {
-    // short-window accuracy (last 30 frames) as fixation proxy
     if (!this.errorBuf.length) return 0;
     const recent = this.errorBuf.slice(-30);
     const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
@@ -168,20 +165,33 @@ socket.on("gaze_raw", (data) => {
 function placeGazeDots(nx, ny) {
   const px = nx * window.innerWidth;
   const py = ny * window.innerHeight;
-  [gazeCalibDot, gazeSessionDot].forEach(d => {
-    d.style.left = px + "px";
-    d.style.top  = py + "px";
-    d.classList.remove("hidden");
-  });
+  
+  // UX FIX: We ONLY show the gaze dot on the Welcome screen and Session screen.
+  // Showing it during calibration creates a visual distraction loop.
+  if (state.screen === "welcome") {
+      gazeCalibDot.style.left = px + "px";
+      gazeCalibDot.style.top  = py + "px";
+      gazeCalibDot.classList.remove("hidden");
+  } else {
+      gazeCalibDot.classList.add("hidden");
+  }
+
+  if (state.screen === "session") {
+      gazeSessionDot.style.left = px + "px";
+      gazeSessionDot.style.top  = py + "px";
+      gazeSessionDot.classList.remove("hidden");
+  } else {
+      gazeSessionDot.classList.add("hidden");
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
 //  CALIBRATION
 // ════════════════════════════════════════════════════════════════
 const CALIB_PTS = [
-  [0.05,0.05],[0.5,0.05],[0.95,0.05],
-  [0.05,0.5], [0.5,0.5], [0.95,0.5],
-  [0.05,0.95],[0.5,0.95],[0.95,0.95],
+  [0.1,0.1],[0.5,0.1],[0.9,0.1],
+  [0.1,0.5],[0.5,0.5],[0.9,0.5],
+  [0.1,0.9],[0.5,0.9],[0.9,0.9],
 ];
 let calibIdx = 0;
 let calibTimer = null;
@@ -190,7 +200,9 @@ function startCalibration() {
   socket.emit("calib_reset");
   calibIdx = 0;
   showScreen("calibrate");
-  gazeCalibDot.classList.remove("hidden");
+  
+  // UX FIX: Hide the uncalibrated dot so you don't try to steer it with your head.
+  gazeCalibDot.classList.add("hidden"); 
   setTimeout(showCalibPoint, 500);
 }
 
@@ -200,14 +212,14 @@ function showCalibPoint() {
   drawCalibCanvas(calibIdx, "waiting");
   let cd = 3;
   const tick = () => {
-    document.getElementById("calib-instruction").textContent = `Look at the dot — ${cd}`;
+    document.getElementById("calib-instruction").textContent = `Look at the yellow dot — ${cd}`;
     if (cd-- > 0) { calibTimer = setTimeout(tick, 700); }
     else {
       drawCalibCanvas(calibIdx, "active");
       document.getElementById("calib-instruction").textContent = "Hold still…";
       const [sx, sy] = CALIB_PTS[calibIdx];
       socket.emit("calib_start_point", { x: sx, y: sy });
-      calibTimer = setTimeout(() => socket.emit("calib_commit_point"), 1800);
+      calibTimer = setTimeout(() => socket.emit("calib_commit_point"), 1200);
     }
   };
   tick();
@@ -327,7 +339,6 @@ function renderLoop(now) {
   const pos = pat(elapsed);
   target.x = pos.x; target.y = pos.y; target.moving = pos.moving;
 
-  // ── Client-side metrics — always update every frame ─────────
   Metrics.update(state.gazeX, state.gazeY, target.x, target.y);
   const snap = Metrics.snapshot();
   state.scoreHistory.push(snap.score);
@@ -336,7 +347,6 @@ function renderLoop(now) {
 
   drawSession(elapsed);
 
-  // Send to server for recording (fire-and-forget)
   socket.emit("session_frame", {
     target_x: target.x, target_y: target.y,
     moving: target.moving, elapsed,
@@ -350,7 +360,6 @@ function drawSession(elapsed) {
   const W = sessionCanvas.width, H = sessionCanvas.height;
   sessionCtx.clearRect(0, 0, W, H);
 
-  // Grid
   sessionCtx.strokeStyle = "rgba(42,58,85,0.25)";
   sessionCtx.lineWidth = 1;
   for (let i = 1; i < 10; i++) {
@@ -360,7 +369,6 @@ function drawSession(elapsed) {
     sessionCtx.moveTo(0, i * H / 10); sessionCtx.lineTo(W, i * H / 10); sessionCtx.stroke();
   }
 
-  // Target trail
   for (let i = 0; i < 40; i++) {
     const t2 = elapsed - (40 - i) * 0.025;
     const pp = (patterns[state.mode] || patterns.circular)(t2);
@@ -370,7 +378,6 @@ function drawSession(elapsed) {
     sessionCtx.fill();
   }
 
-  // Target dot (pulsing pink)
   const pulse = 1 + 0.15 * Math.sin(elapsed * 5);
   const tx = target.x * W, ty = target.y * H;
   const g = sessionCtx.createRadialGradient(tx, ty, 0, tx, ty, 24 * pulse);
@@ -382,7 +389,6 @@ function drawSession(elapsed) {
   sessionCtx.fillStyle = "#f472b6"; sessionCtx.fill();
   sessionCtx.strokeStyle = "#fff"; sessionCtx.lineWidth = 1.5; sessionCtx.stroke();
 
-  // Gaze crosshair + error line
   if ((Date.now() - state.lastGazeTime) < 500) {
     const gx = state.gazeX * W, gy = state.gazeY * H;
     sessionCtx.strokeStyle = "rgba(56,189,248,0.35)";
@@ -395,7 +401,6 @@ function drawSession(elapsed) {
     sessionCtx.strokeStyle = "rgba(251,191,36,0.18)"; sessionCtx.stroke();
   }
 
-  // "No gaze" warning
   if ((Date.now() - state.lastGazeTime) > 1500 && state.sessionActive) {
     sessionCtx.fillStyle = "rgba(248,113,113,0.8)";
     sessionCtx.font = "bold 15px system-ui";
@@ -456,7 +461,6 @@ function drawSparkline() {
 //  RESULTS
 // ════════════════════════════════════════════════════════════════
 function showResults(summary) {
-  // Use client-side metrics as ground truth if server returns blanks
   const snap = Metrics.snapshot();
   showScreen("results");
   document.getElementById("res-score").textContent  = (summary.final_score  ?? snap.score).toFixed(1);
