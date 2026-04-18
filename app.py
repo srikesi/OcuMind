@@ -5,9 +5,6 @@ Run with:  python app.py
 Then open  http://localhost:5050
 """
 
-import eventlet
-eventlet.monkey_patch()          # must be FIRST
-
 import json
 import time
 import threading
@@ -26,7 +23,7 @@ from session     import SessionManager
 # ------------------------------------------------------------------ #
 
 app      = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 tracker  = GazeTracker()
 calib    = CalibrationManager()
@@ -246,7 +243,7 @@ def _gaze_broadcast():
         else:
             socketio.emit("gaze_raw", {"detected": False})
 
-        eventlet.sleep(1 / 30)   # ~30 Hz
+        time.sleep(1 / 30)   # ~30 Hz
 
 
 def _start_gaze_stream():
