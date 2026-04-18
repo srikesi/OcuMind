@@ -9,10 +9,8 @@ function playSound(freq, type, duration) {
   osc.type = type;
   osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
   
-  // INCREASED VOLUME: Peak volume raised to 0.35
   const peakVolume = 0.35; 
   
-  // CHIME ENVELOPE: Quick attack, slow exponential release creates a natural "ring"
   gain.gain.setValueAtTime(0, audioCtx.currentTime);
   gain.gain.linearRampToValueAtTime(peakVolume, audioCtx.currentTime + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
@@ -30,6 +28,7 @@ const socket = io({ transports: ["websocket"] });
 const state = {
   screen: "welcome",
   mode: "circular",
+  duration: 60,
   calibrated: false,
   gazeX: 0.5, gazeY: 0.5,
   gazeDetected: false,
@@ -148,12 +147,21 @@ const btnCalibrate = document.getElementById("btn-calibrate");
 const btnSkip      = document.getElementById("btn-skip-calib");
 const btnHistory   = document.getElementById("btn-history");
 const modeButtons  = document.querySelectorAll(".mode-btn");
+const durButtons   = document.querySelectorAll(".dur-btn");
 
 modeButtons.forEach(btn => {
   btn.addEventListener("click", () => {
     modeButtons.forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     state.mode = btn.dataset.mode;
+  });
+});
+
+durButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    durButtons.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.duration = parseInt(btn.dataset.sec, 10);
   });
 });
 
@@ -168,11 +176,11 @@ socket.on("connect", () => socket.emit("start_camera"));
 
 socket.on("camera_ready", ({ ok, error }) => {
   if (ok) {
-    cameraBadge.textContent = "✅ Camera ready";
+    cameraBadge.textContent = "Camera ready";
     cameraBadge.className   = "status-badge ok";
     btnCalibrate.disabled   = false;
   } else {
-    cameraBadge.textContent = `❌ Camera error: ${error}`;
+    cameraBadge.textContent = `Camera error: ${error}`;
     cameraBadge.className   = "status-badge err";
   }
 });
@@ -192,14 +200,10 @@ socket.on("gaze_raw", (data) => {
   let gx = data.x;
   let gy = data.y;
 
-  // STRICT FIRST CLAMP
-  // Normalize wild coordinate spikes before doing any math
   if (isNaN(gx) || isNaN(gy)) return;
   gx = Math.max(0, Math.min(1, gx));
   gy = Math.max(0, Math.min(1, gy));
 
-  // BULLETPROOF MAGNETISM
-  // Only execute if explicitly in an active session
   if (state.screen === "session" && state.sessionActive) {
     const dx = target.x - gx;
     const dy = target.y - gy;
@@ -211,7 +215,6 @@ socket.on("gaze_raw", (data) => {
     }
   }
 
-  // SECOND CLAMP: Ensure magnetism never pushes it out of bounds
   gx = Math.max(0, Math.min(1, gx));
   gy = Math.max(0, Math.min(1, gy));
 
@@ -223,9 +226,8 @@ socket.on("gaze_raw", (data) => {
 
 function placeGazeDots(nx, ny) {
   const px = nx * window.innerWidth;
-  const py = window.innerHeight * ny; // Ensure we multiply ny correctly
+  const py = window.innerHeight * ny;
   
-  // MASTER VISIBILITY SWITCH
   if (state.screen === "welcome") {
       gazeCalibDot.style.left = px + "px";
       gazeCalibDot.style.top  = py + "px";
@@ -274,13 +276,13 @@ function showCalibPoint() {
   const tick = () => {
     document.getElementById("calib-instruction").textContent = `Look at the yellow dot — ${cd}`;
     if (cd-- > 0) { 
-      playSound(440, "sine", 0.15); // SOUND: Short subtle countdown beep
+      playSound(440, "sine", 0.15);
       calibTimer = setTimeout(tick, 700); 
     }
     else {
       drawCalibCanvas(calibIdx, "active");
       document.getElementById("calib-instruction").textContent = "Hold still…";
-      playSound(1046, "sine", 0.9); // SOUND: High, long ringing chime (C6)
+      playSound(1046, "sine", 0.9);
       const [sx, sy] = CALIB_PTS[calibIdx];
       socket.emit("calib_start_point", { x: sx, y: sy });
       calibTimer = setTimeout(() => socket.emit("calib_commit_point"), 1200);
@@ -298,18 +300,17 @@ function finishCalibration() {
 }
 socket.on("calib_result", ({ ok }) => {
   if (ok) {
-    // SOUND: Triumphant Sequence of Chime Dings (C Major ascending)
-    playSound(523, "sine", 0.6); // C5
-    setTimeout(() => playSound(659, "sine", 0.6), 100); // E5
-    setTimeout(() => playSound(784, "sine", 0.6), 200); // G5
-    setTimeout(() => playSound(1046, "sine", 1.2), 300); // C6 with long ring
+    playSound(523, "sine", 0.6);
+    setTimeout(() => playSound(659, "sine", 0.6), 100);
+    setTimeout(() => playSound(784, "sine", 0.6), 200);
+    setTimeout(() => playSound(1046, "sine", 1.2), 300);
 
     state.calibrated = true;
-    document.getElementById("calib-instruction").textContent = "✅ Done!";
+    document.getElementById("calib-instruction").textContent = "Done!";
     setTimeout(startSession, 800);
   } else {
-    playSound(200, "sawtooth", 0.4); // SOUND: Error buzz
-    document.getElementById("calib-instruction").textContent = "⚠ Failed — try again.";
+    playSound(200, "sawtooth", 0.4);
+    document.getElementById("calib-instruction").textContent = "Failed — try again.";
     setTimeout(() => showScreen("welcome"), 2000);
   }
 });
@@ -367,12 +368,10 @@ const patterns = {
 // ════════════════════════════════════════════════════════════════
 //  SESSION
 // ════════════════════════════════════════════════════════════════
-const SESSION_SECS = 60;
 let animFrame   = null;
 let stopTimer   = null;
 
 function startSession() {
-  // SOUND: Session Start chime
   playSound(659, "sine", 0.2); 
   setTimeout(() => playSound(1046, "sine", 0.8), 150);
 
@@ -385,7 +384,8 @@ function startSession() {
   document.getElementById("hud-mode").textContent = state.mode.toUpperCase();
   scoreChartCtx.clearRect(0, 0, scoreChartCanvas.width, scoreChartCanvas.height);
   animFrame = requestAnimationFrame(renderLoop);
-  stopTimer = setTimeout(stopSession, SESSION_SECS * 1000);
+  
+  stopTimer = setTimeout(stopSession, state.duration * 1000); 
 }
 
 document.getElementById("btn-stop-session").addEventListener("click", stopSession);
@@ -393,7 +393,7 @@ document.getElementById("btn-stop-session").addEventListener("click", stopSessio
 function stopSession() {
   if (!state.sessionActive) return;
   
-  playSound(400, "sine", 0.5); // SOUND: Session Stop tone
+  playSound(400, "sine", 0.5);
 
   state.sessionActive = false;
   clearTimeout(stopTimer);
@@ -482,7 +482,7 @@ function drawSession(elapsed) {
     sessionCtx.fillStyle = "rgba(248,113,113,0.8)";
     sessionCtx.font = "bold 15px system-ui";
     sessionCtx.textAlign = "center";
-    sessionCtx.fillText("⚠ Face not detected — check camera", W / 2, H - 30);
+    sessionCtx.fillText("Face not detected — check camera", W / 2, H - 30);
   }
 }
 
@@ -579,6 +579,6 @@ async function showHistory() {
 }
 
 socket.on("connect_error", () => {
-  cameraBadge.textContent = "❌ Server connection failed";
+  cameraBadge.textContent = "Server connection failed";
   cameraBadge.className   = "status-badge err";
 });

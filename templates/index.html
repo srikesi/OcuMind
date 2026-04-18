@@ -32,6 +32,15 @@
       </div>
     </div>
 
+    <div class="mode-picker" style="margin-top: 15px;">
+      <label>Session Duration</label>
+      <div class="mode-buttons">
+        <button class="dur-btn" data-sec="30">30s</button>
+        <button class="dur-btn active" data-sec="60">60s</button>
+        <button class="dur-btn" data-sec="90">90s</button>
+      </div>
+    </div>
+
     <div class="welcome-actions">
       <button id="btn-calibrate" class="btn-primary" disabled>Calibrate</button>
       <button id="btn-skip-calib" class="btn-secondary">Skip (demo)</button>
@@ -133,19 +142,6 @@
     <div id="history-list"></div>
     <button id="btn-close-history" class="btn-secondary">Close</button>
   </div>
-</div>
-
-<div id="calibration-instructions" class="modal-overlay">
-    <div class="instruction-card">
-        <h2 id="inst-title">Calibration Setup</h2>
-        <p id="inst-text">Welcome! Let's calibrate the eye tracker.</p>
-        
-        <div class="dot-preview-container" id="dot-preview" style="display: none;">
-            <div class="calib-dot preview-dot" id="preview-dot-element"></div>
-        </div>
-
-        <button id="inst-next-btn">Next</button>
-    </div>
 </div>
 
 <div id="loading-overlay" class="hidden">
