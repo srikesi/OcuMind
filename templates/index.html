@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OcuMind — Eye Tracking Rehab</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ SCREENS ══════════ -->
+
+<!-- ① Welcome screen -->
+<div id="screen-welcome" class="screen active">
+  <div class="welcome-card">
+    <div class="logo">👁 OcuMind</div>
+    <p class="tagline">Real-time eye tracking · Visuomotor rehabilitation</p>
+
+    <div class="step-list">
+      <div class="step"><span class="num">1</span> Allow webcam access</div>
+      <div class="step"><span class="num">2</span> Complete 9-point calibration</div>
+      <div class="step"><span class="num">3</span> Choose exercise &amp; train</div>
+    </div>
+
+    <div id="camera-status" class="status-badge warn">⏳ Starting camera…</div>
+
+    <div class="mode-picker">
+      <label>Exercise mode</label>
+      <div class="mode-buttons">
+        <button class="mode-btn active" data-mode="circular">🔵 Circular</button>
+        <button class="mode-btn" data-mode="linear">➡ Linear sweep</button>
+        <button class="mode-btn" data-mode="random">🎲 Random</button>
+        <button class="mode-btn" data-mode="figure8">∞ Figure-8</button>
+      </div>
+    </div>
+
+    <div class="welcome-actions">
+      <button id="btn-calibrate" class="btn-primary" disabled>Calibrate</button>
+      <button id="btn-skip-calib" class="btn-secondary">Skip (demo)</button>
+    </div>
+
+    <div class="history-link"><a href="#" id="btn-history">📊 View session history</a></div>
+  </div>
+</div>
+
+
+<!-- ② Calibration screen -->
+<div id="screen-calibrate" class="screen">
+  <canvas id="calib-canvas"></canvas>
+  <div id="calib-hud">
+    <div id="calib-instruction">Look at the dot and hold still</div>
+    <div id="calib-progress">Point 0 / 9</div>
+  </div>
+  <div id="gaze-dot" class="gaze-dot hidden"></div>
+</div>
+
+
+<!-- ③ Training session screen -->
+<div id="screen-session" class="screen">
+  <canvas id="session-canvas"></canvas>
+
+  <!-- Gaze dot overlay -->
+  <div id="session-gaze-dot" class="gaze-dot"></div>
+
+  <!-- HUD top-left -->
+  <div class="session-hud-top">
+    <div class="hud-pill">
+      <span class="hud-label">MODE</span>
+      <span id="hud-mode">—</span>
+    </div>
+    <div class="hud-pill">
+      <span class="hud-label">TIME</span>
+      <span id="hud-time">0:00</span>
+    </div>
+    <button id="btn-stop-session" class="btn-danger-sm">■ Stop</button>
+  </div>
+
+  <!-- Metrics panel -->
+  <div class="metrics-panel">
+    <div class="metric-row">
+      <span class="metric-label">🎯 Accuracy</span>
+      <div class="metric-bar-wrap">
+        <div class="metric-bar" id="bar-accuracy"></div>
+      </div>
+      <span class="metric-val" id="val-accuracy">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">🌀 Smoothness</span>
+      <div class="metric-bar-wrap">
+        <div class="metric-bar" id="bar-smoothness"></div>
+      </div>
+      <span class="metric-val" id="val-smoothness">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">📉 Stability</span>
+      <div class="metric-bar-wrap">
+        <div class="metric-bar" id="bar-stability"></div>
+      </div>
+      <span class="metric-val" id="val-stability">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">⏱ Latency</span>
+      <span class="metric-val wide" id="val-latency">—</span>
+    </div>
+
+    <div class="score-ring-wrap">
+      <canvas id="score-ring" width="110" height="110"></canvas>
+      <div class="score-number" id="score-number">—</div>
+      <div class="score-label">SCORE</div>
+    </div>
+
+    <!-- Mini sparkline chart -->
+    <canvas id="score-chart" width="200" height="60"></canvas>
+  </div>
+</div>
+
+
+<!-- ④ Results screen -->
+<div id="screen-results" class="screen">
+  <div class="results-card">
+    <h2>Session Complete 🏁</h2>
+    <div class="results-grid">
+      <div class="res-item"><div class="res-val" id="res-score">—</div><div class="res-lbl">Score</div></div>
+      <div class="res-item"><div class="res-val" id="res-acc">—</div><div class="res-lbl">Accuracy</div></div>
+      <div class="res-item"><div class="res-val" id="res-smooth">—</div><div class="res-lbl">Smoothness</div></div>
+      <div class="res-item"><div class="res-val" id="res-stab">—</div><div class="res-lbl">Stability</div></div>
+      <div class="res-item"><div class="res-val" id="res-lat">—</div><div class="res-lbl">Latency</div></div>
+      <div class="res-item"><div class="res-val" id="res-dur">—</div><div class="res-lbl">Duration</div></div>
+    </div>
+    <div class="results-actions">
+      <button id="btn-new-session" class="btn-primary">New Session</button>
+      <button id="btn-export-json" class="btn-secondary">Export JSON</button>
+      <button id="btn-export-csv"  class="btn-secondary">Export CSV</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ⑤ History modal -->
+<div id="modal-history" class="modal hidden">
+  <div class="modal-card">
+    <h3>Session History</h3>
+    <div id="history-list"></div>
+    <button id="btn-close-history" class="btn-secondary">Close</button>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="loading-overlay" class="hidden">
+  <div class="spinner"></div>
+  <div id="loading-msg">Starting camera…</div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

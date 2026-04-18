@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+data/sessions/*.json
+data/sessions/*.csv
+.DS_Store
+*.egg-info/
+dist/
+build/
