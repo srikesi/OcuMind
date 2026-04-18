@@ -146,7 +146,6 @@ speedButtons.forEach(btn => {
   });
 });
 
-// Logic for clicking "Next" on the instruction cards
 nextButtons.forEach(btn => {
   btn.addEventListener("click", () => {
     instrCards[currentInstrStep].classList.remove("active");
@@ -157,7 +156,6 @@ nextButtons.forEach(btn => {
   });
 });
 
-// Show the modal and reset to step 0 when clicking Calibrate
 btnCalibrate.addEventListener("click", () => {
   currentInstrStep = 0;
   instrCards.forEach((card, index) => {
@@ -170,7 +168,6 @@ btnCalibrate.addEventListener("click", () => {
   instrModal.classList.remove("hidden");
 });
 
-// Final Start button logic inside the modal
 document.getElementById("btn-start-calib-now").addEventListener("click", () => {
   instrModal.classList.add("hidden");
   startCalibration();
@@ -213,7 +210,6 @@ socket.on("gaze_raw", (data) => {
   gx = Math.max(0, Math.min(1, gx)); 
   gy = Math.max(0, Math.min(1, gy));
   
-  // FIX: Properly assign gy to state.gazeY
   state.gazeX = gx; 
   state.gazeY = gy; 
   state.lastGazeTime = Date.now();
@@ -256,12 +252,12 @@ function showCalibPoint() {
   let cd = 3;
   const tick = () => {
     if (cd-- > 0) { 
-      playSound(440, "sine", 0.15); // Low-pitched countdown beep
+      playSound(440, "sine", 0.15);
       calibTimer = setTimeout(tick, 700); 
     }
     else {
       drawCalibCanvas(calibIdx, "active");
-      playSound(1046, "sine", 0.9); // Steady high-pitched hold tone
+      playSound(1046, "sine", 0.9);
       const [sx, sy] = CALIB_PTS[calibIdx];
       socket.emit("calib_start_point", { x: sx, y: sy });
       calibTimer = setTimeout(() => socket.emit("calib_commit_point"), 1200);
@@ -283,7 +279,6 @@ function finishCalibration() {
 
 socket.on("calib_result", ({ ok }) => {
   if (ok) {
-    // Rising chime to signal calibration success and transition to session
     playSound(523, "sine", 0.6);
     setTimeout(() => playSound(659, "sine", 0.6), 150);
     setTimeout(() => playSound(784, "sine", 0.6), 300);
@@ -319,15 +314,33 @@ const patterns = {
     y: 0.5 + 0.28 * Math.sin(t * 0.6 * state.speed), 
     moving: true 
   }),
-  linear: t => { 
+  horizontal: t => { 
     const p = (t * 0.25 * state.speed) % 2; 
     return { x: 0.1 + (p < 1 ? p : 2 - p) * 0.8, y: 0.5, moving: true }; 
+  },
+  vertical: t => { 
+    const p = (t * 0.25 * state.speed) % 2; 
+    return { x: 0.5, y: 0.1 + (p < 1 ? p : 2 - p) * 0.8, moving: true }; 
   },
   figure8: t => ({ 
     x: 0.5 + 0.38 * Math.sin(t * 0.5 * state.speed), 
     y: 0.5 + 0.22 * Math.sin(t * state.speed), 
     moving: true 
   }),
+  zigzag: t => { 
+    const p = (t * 0.2 * state.speed) % 2; 
+    const dir = p < 1 ? p : 2 - p;
+    return { x: 0.1 + dir * 0.8, y: 0.5 + 0.3 * Math.sin(t * 3 * state.speed), moving: true }; 
+  },
+  speed_changes: t => {
+    // Math to warp time forward and back smoothly, creating speed oscillation
+    const tWarp = t * state.speed + 0.6 * Math.sin(t * state.speed * 1.5);
+    return { 
+      x: 0.5 + 0.35 * Math.cos(tWarp * 0.6), 
+      y: 0.5 + 0.28 * Math.sin(tWarp * 0.6), 
+      moving: true 
+    };
+  },
   random: (() => {
     let nx = 0.5, ny = 0.5, last = 0;
     return t => {
@@ -339,6 +352,16 @@ const patterns = {
       return { x: nx, y: ny, moving: false };
     };
   })(),
+  fixation: t => ({ 
+    x: 0.5, 
+    y: 0.5, 
+    moving: false 
+  }),
+  follow_color: t => ({ // Main target moving smoothly
+    x: 0.5 + 0.3 * Math.cos(t * 0.7 * state.speed) + 0.1 * Math.sin(t * 0.3 * state.speed), 
+    y: 0.5 + 0.2 * Math.sin(t * 0.5 * state.speed) + 0.1 * Math.cos(t * 0.8 * state.speed), 
+    moving: true 
+  })
 };
 
 let animFrame = null; let stopTimer = null;
@@ -348,7 +371,7 @@ function startSession() {
   Metrics.reset();
   socket.emit("session_start", { mode: state.mode });
   showScreen("session");
-  document.getElementById("hud-mode").textContent = state.mode.toUpperCase();
+  document.getElementById("hud-mode").textContent = state.mode.replace("_", " ").toUpperCase();
   scoreChartCtx.clearRect(0, 0, scoreChartCanvas.width, scoreChartCanvas.height);
   animFrame = requestAnimationFrame(renderLoop);
   stopTimer = setTimeout(stopSession, state.duration * 1000); 
@@ -391,21 +414,48 @@ function drawSession(elapsed) {
   const W = sessionCanvas.width, H = sessionCanvas.height;
   sessionCtx.clearRect(0, 0, W, H);
   sessionCtx.strokeStyle = "rgba(42,58,85,0.25)"; sessionCtx.lineWidth = 1;
+  
+  // Background grid
   for (let i = 1; i < 10; i++) {
     sessionCtx.beginPath(); sessionCtx.moveTo(i * W / 10, 0); sessionCtx.lineTo(i * W / 10, H); sessionCtx.stroke();
     sessionCtx.beginPath(); sessionCtx.moveTo(0, i * H / 10); sessionCtx.lineTo(W, i * H / 10); sessionCtx.stroke();
   }
-  for (let i = 0; i < 40; i++) {
-    const t2 = elapsed - (40 - i) * 0.025; const pp = (patterns[state.mode] || patterns.circular)(t2);
-    sessionCtx.beginPath(); sessionCtx.arc(pp.x * W, pp.y * H, 4, 0, Math.PI * 2);
-    sessionCtx.fillStyle = `rgba(244,114,182,${(i / 40) * 0.2})`; sessionCtx.fill();
+  
+  // Trail effect (skip for fixation and random, makes it cleaner)
+  if (state.mode !== "fixation" && state.mode !== "random") {
+    for (let i = 0; i < 40; i++) {
+      const t2 = Math.max(0, elapsed - (40 - i) * 0.025); 
+      const pp = (patterns[state.mode] || patterns.circular)(t2);
+      sessionCtx.beginPath(); sessionCtx.arc(pp.x * W, pp.y * H, 4, 0, Math.PI * 2);
+      sessionCtx.fillStyle = `rgba(244,114,182,${(i / 40) * 0.2})`; sessionCtx.fill();
+    }
   }
+
+  // Draw colorful distractors for 'follow_color' mode
+  if (state.mode === "follow_color") {
+    const distractors = [
+      { c: "#34d399", x: 0.5 + 0.35 * Math.sin(elapsed * 0.6 * state.speed), y: 0.5 + 0.25 * Math.cos(elapsed * 0.8 * state.speed) },
+      { c: "#38bdf8", x: 0.5 + 0.25 * Math.cos(elapsed * 0.9 * state.speed), y: 0.5 + 0.35 * Math.sin(elapsed * 0.4 * state.speed) },
+      { c: "#fbbf24", x: 0.5 + 0.40 * Math.sin(elapsed * 0.5 * state.speed), y: 0.5 + 0.20 * Math.cos(elapsed * 0.7 * state.speed) },
+      { c: "#a855f7", x: 0.5 + 0.20 * Math.cos(elapsed * 1.1 * state.speed), y: 0.5 + 0.30 * Math.sin(elapsed * 0.6 * state.speed) }
+    ];
+    distractors.forEach(d => {
+      const dx = d.x * W, dy = d.y * H;
+      sessionCtx.beginPath(); sessionCtx.arc(dx, dy, 12, 0, Math.PI * 2);
+      sessionCtx.fillStyle = d.c; sessionCtx.fill();
+      sessionCtx.strokeStyle = "rgba(255,255,255,0.8)"; sessionCtx.lineWidth = 1.5; sessionCtx.stroke();
+    });
+  }
+  
+  // Main target dot
   const pulse = 1 + 0.15 * Math.sin(elapsed * 5); const tx = target.x * W, ty = target.y * H;
   const g = sessionCtx.createRadialGradient(tx, ty, 0, tx, ty, 24 * pulse);
   g.addColorStop(0, "rgba(244,114,182,0.85)"); g.addColorStop(1, "rgba(244,114,182,0)");
   sessionCtx.beginPath(); sessionCtx.arc(tx, ty, 24 * pulse, 0, Math.PI * 2); sessionCtx.fillStyle = g; sessionCtx.fill();
   sessionCtx.beginPath(); sessionCtx.arc(tx, ty, 10, 0, Math.PI * 2); sessionCtx.fillStyle = "#f472b6"; sessionCtx.fill();
   sessionCtx.strokeStyle = "#fff"; sessionCtx.lineWidth = 1.5; sessionCtx.stroke();
+  
+  // Player gaze visualization
   if ((Date.now() - state.lastGazeTime) < 500) {
     const gx = state.gazeX * W, gy = state.gazeY * H;
     sessionCtx.strokeStyle = "rgba(56,189,248,0.35)"; sessionCtx.lineWidth = 1;
