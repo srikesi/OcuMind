@@ -56,6 +56,14 @@ RIGHT_EYE_CORNERS = [362, 263]    # inner, outer
 LEFT_EYE_TB  = [159, 145]         # top lid, bottom lid
 RIGHT_EYE_TB = [386, 374]         # top lid, bottom lid
 
+# Under-eye landmarks (top of cheek) — don't move with blinks/expressions.
+# Used as a more stable vertical reference than eyelids.
+LEFT_UNDEREYE  = 230              # below left eye
+RIGHT_UNDEREYE = 450              # below right eye
+# Brow landmarks — upper stable reference
+LEFT_BROW      = 52
+RIGHT_BROW     = 282
+
 # Nose tip — stable landmark used as head-position reference
 NOSE_TIP = 1
 
@@ -125,12 +133,12 @@ class GazeTracker:
         self._haar_eye    = None
         self._last_ts_ms  = 0
 
-        # One-Euro filters for x and y. Tuned for the low-magnitude
-        # iris-ratio signal: lower mincutoff = heavier smoothing when
-        # still (kills jitter during fixation); beta keeps it responsive
-        # during actual eye movements (saccades).
-        self._filter_x = OneEuroFilter(mincutoff=0.5, beta=0.05)
-        self._filter_y = OneEuroFilter(mincutoff=0.5, beta=0.05)
+        # One-Euro filters. Y gets heavier smoothing (lower mincutoff)
+        # because vertical gaze signal is inherently noisier — the eye
+        # is physically ~3× narrower vertically than horizontally, so
+        # the same landmark jitter is 3× worse in vertical.
+        self._filter_x = OneEuroFilter(mincutoff=1.0, beta=0.04)
+        self._filter_y = OneEuroFilter(mincutoff=0.6, beta=0.03)
 
         self._gaze = {
             "x": 0.5, "y": 0.5,
@@ -182,7 +190,7 @@ class GazeTracker:
                 min_face_presence_confidence=0.5,
                 min_tracking_confidence=0.5,
                 output_face_blendshapes=False,
-                output_facial_transformation_matrixes=False,
+                output_facial_transformation_matrixes=True,   # enables head pose
                 result_callback=self._on_result,
             )
             self._landmarker = mp_vision.FaceLandmarker.create_from_options(opts)
@@ -245,8 +253,14 @@ class GazeTracker:
             lm = result.face_landmarks[0]
             n  = len(lm)
 
+            # 3D head pose matrix (4x4) if MediaPipe provided it
+            tmat = None
+            if (result.facial_transformation_matrixes
+                    and len(result.facial_transformation_matrixes) > 0):
+                tmat = np.array(result.facial_transformation_matrixes[0])
+
             if n >= 478:
-                gaze = self._iris_gaze(lm)
+                gaze = self._iris_gaze(lm, tmat)
                 gaze["method"] = "iris"
             elif n >= 468:
                 gaze = self._eye_corner_gaze(lm)
@@ -264,22 +278,17 @@ class GazeTracker:
 
     # ── Estimation methods ──────────────────────────────────────────
 
-    def _iris_gaze(self, lm) -> dict:
+    def _iris_gaze(self, lm, tmat=None) -> dict:
         """
-        Head-invariant gaze: iris position relative to its own eye socket.
+        Hybrid gaze estimation:
+          1. Iris-in-eye ratio (head-invariant by construction)
+          2. Subtract residual head yaw/pitch from 3D transform matrix
+          3. One-Euro filter the result
 
-        For each eye we compute where the iris sits within the rectangle
-        defined by the eye corners (horizontal) and eyelids (vertical).
-        Because the eye corners/lids move WITH the head, head motion
-        cancels out — only real eye movement changes the ratio.
-
-        Noise mitigation (critical — this was the failure mode last time):
-          1. Use iris CENTROID (mean of 5 iris landmarks), not one point
-          2. Average BOTH eyes (halves uncorrelated noise)
-          3. One-Euro filter after computing the ratio, not before
-
-        Returns smoothed [0,1] coords + head-reference position so the
-        client can (optionally) warn the user about head drift.
+        The 3D matrix from MediaPipe gives us actual head rotation
+        (not just translation). Subtracting a small fraction of the
+        yaw/pitch angles cancels the residual head-motion leak that
+        ratio-only methods can't fully eliminate.
         """
         def mean_xy(idxs):
             return (float(np.mean([lm[i].x for i in idxs])),
@@ -288,36 +297,63 @@ class GazeTracker:
         li_x, li_y = mean_xy(LEFT_IRIS)
         ri_x, ri_y = mean_xy(RIGHT_IRIS)
 
-        # Eye-corner references (these move with the head)
+        # Eye socket corners
         l_outer, l_inner = lm[LEFT_EYE_CORNERS[0]],  lm[LEFT_EYE_CORNERS[1]]
         r_inner, r_outer = lm[RIGHT_EYE_CORNERS[0]], lm[RIGHT_EYE_CORNERS[1]]
-        # Eyelid references for vertical
-        l_top, l_bot = lm[LEFT_EYE_TB[0]],  lm[LEFT_EYE_TB[1]]
-        r_top, r_bot = lm[RIGHT_EYE_TB[0]], lm[RIGHT_EYE_TB[1]]
 
-        # Left eye: where is iris within the eye horizontally & vertically?
-        l_width  = abs(l_inner.x - l_outer.x) + 1e-6
-        l_height = abs(l_bot.y   - l_top.y)   + 1e-6
-        l_rx = (li_x - min(l_outer.x, l_inner.x)) / l_width     # 0 = looking right edge, 1 = left edge
-        l_ry = (li_y - l_top.y) / l_height                      # 0 = looking up, 1 = down
+        # Iris-in-eye HORIZONTAL ratio (this already works well) — use eye corners
+        l_w = abs(l_inner.x - l_outer.x) + 1e-6
+        r_w = abs(r_outer.x - r_inner.x) + 1e-6
+        l_rx = (li_x - min(l_outer.x, l_inner.x)) / l_w
+        r_rx = (ri_x - min(r_inner.x, r_outer.x)) / r_w
 
-        # Right eye
-        r_width  = abs(r_outer.x - r_inner.x) + 1e-6
-        r_height = abs(r_bot.y   - r_top.y)   + 1e-6
-        r_rx = (ri_x - min(r_inner.x, r_outer.x)) / r_width
-        r_ry = (ri_y - r_top.y) / r_height
+        # Iris-in-eye VERTICAL ratio — use BROW to UNDER-EYE instead of
+        # eyelids. Eyelids move with blinks/expressions (noisy).
+        # Brow and cheek landmarks are stable to expression changes.
+        l_brow   = lm[LEFT_BROW]
+        r_brow   = lm[RIGHT_BROW]
+        l_under  = lm[LEFT_UNDEREYE]
+        r_under  = lm[RIGHT_UNDEREYE]
 
-        # Average both eyes — halves uncorrelated landmark noise
+        l_h = abs(l_under.y - l_brow.y) + 1e-6
+        r_h = abs(r_under.y - r_brow.y) + 1e-6
+        l_ry = (li_y - l_brow.y) / l_h
+        r_ry = (ri_y - r_brow.y) / r_h
+
         ratio_x = (l_rx + r_rx) / 2.0
         ratio_y = (l_ry + r_ry) / 2.0
 
-        # Typical ratio range: ~0.3 → 0.7 horizontally, ~0.3 → 0.8 vertically.
-        # Rescale to approx [0, 1] before calibration polynomial takes over.
-        # Calibration will absorb exact per-user offsets.
-        raw_x = float(np.clip((ratio_x - 0.3) / 0.4, -0.2, 1.2))
-        raw_y = float(np.clip((ratio_y - 0.3) / 0.5, -0.2, 1.2))
+        # Rescale. Horizontal ratio typically ~0.3–0.7. Vertical ratio
+        # with brow-to-cheek reference typically ~0.4–0.7 (iris lives
+        # in the upper half of brow-to-cheek span).
+        raw_x = (ratio_x - 0.3) / 0.4
+        raw_y = (ratio_y - 0.4) / 0.3
 
-        # Heavy smoothing — ratio signal is low-magnitude and noisy
+        # ── Head pose subtraction using 3D transformation matrix ────
+        # Extract yaw and pitch from the rotation part of the 4x4 matrix.
+        # Standard rotation matrix → euler angle extraction.
+        head_yaw   = 0.0
+        head_pitch = 0.0
+        if tmat is not None and tmat.shape == (4, 4):
+            R = tmat[:3, :3]
+            # pitch = rotation around X axis, yaw = rotation around Y axis
+            # Using the standard XYZ euler convention
+            head_pitch = float(np.arctan2(-R[1, 2], R[2, 2]))  # radians
+            head_yaw   = float(np.arctan2(-R[0, 2], np.sqrt(R[1, 2]**2 + R[2, 2]**2)))
+
+        # Subtract head rotation from raw gaze. Pitch affects vertical
+        # gaze more strongly than yaw affects horizontal (perspective
+        # foreshortening when head tilts up/down), so pitch gets higher gain.
+        HEAD_YAW_GAIN   = 1.2
+        HEAD_PITCH_GAIN = 2.0
+        raw_x += head_yaw   * HEAD_YAW_GAIN
+        raw_y += head_pitch * HEAD_PITCH_GAIN
+
+        # Clip the pre-filter value to a sensible range
+        raw_x = float(np.clip(raw_x, -0.3, 1.3))
+        raw_y = float(np.clip(raw_y, -0.3, 1.3))
+
+        # One-Euro smoothing
         t = time.time()
         sx = float(np.clip(self._filter_x(raw_x, t), 0.0, 1.0))
         sy = float(np.clip(self._filter_y(raw_y, t), 0.0, 1.0))
@@ -329,6 +365,8 @@ class GazeTracker:
             "x": sx, "y": sy,
             "raw_x": raw_x, "raw_y": raw_y,
             "head_x": head_x, "head_y": head_y,
+            "head_yaw":   head_yaw,
+            "head_pitch": head_pitch,
         }
 
     def _eye_corner_gaze(self, lm) -> dict:

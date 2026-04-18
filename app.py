@@ -39,7 +39,7 @@ _state = {
     "calib_collecting": False,   # currently collecting a calib point
     "calib_point": None,         # (screen_x, screen_y) of current point
     "calib_buf":  [],            # raw gaze samples for current point
-    "calib_buf_target": 30,      # samples to collect per point
+    "calib_buf_target": 50,      # samples to collect per point (robust mean keeps inliers)
 }
 
 # ------------------------------------------------------------------ #
@@ -128,13 +128,27 @@ def on_calib_start_point(data):
 
 @socketio.on("calib_commit_point")
 def on_calib_commit_point():
-    """Average collected samples and add to CalibrationManager."""
+    """Robustly aggregate collected samples and add to CalibrationManager.
+
+    Uses median-based outlier rejection: keep only samples within ~1
+    median absolute deviation of the median. Protects against blinks
+    or saccades during the collection window.
+    """
+    import numpy as np
     buf = _state["calib_buf"]
-    if buf:
-        rx = sum(p[0] for p in buf) / len(buf)
-        ry = sum(p[1] for p in buf) / len(buf)
+    if buf and len(buf) >= 5:
+        arr = np.array(buf)                       # shape (N, 2)
+        med = np.median(arr, axis=0)
+        dists = np.linalg.norm(arr - med, axis=1)
+        mad = np.median(dists) + 1e-6
+        keep = arr[dists < 2.5 * mad]             # reject >2.5 MAD outliers
+        if len(keep) < 3:
+            keep = arr                            # fall back if too aggressive
+        rx, ry = float(np.mean(keep[:, 0])), float(np.mean(keep[:, 1]))
         sx, sy = _state["calib_point"]
         calib.add_sample(sx, sy, rx, ry)
+        print(f"[OcuMind] calib point ({sx:.2f},{sy:.2f}): "
+              f"{len(keep)}/{len(buf)} samples kept")
     _state["calib_collecting"] = False
     _state["calib_buf"]        = []
     emit("calib_point_done", {"n": calib.sample_count()})

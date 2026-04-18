@@ -179,9 +179,9 @@ function placeGazeDots(nx, ny) {
 //  CALIBRATION
 // ════════════════════════════════════════════════════════════════
 const CALIB_PTS = [
-  [0.1,0.1],[0.5,0.1],[0.9,0.1],
-  [0.1,0.5],[0.5,0.5],[0.9,0.5],
-  [0.1,0.9],[0.5,0.9],[0.9,0.9],
+  [0.05,0.05],[0.5,0.05],[0.95,0.05],
+  [0.05,0.5], [0.5,0.5], [0.95,0.5],
+  [0.05,0.95],[0.5,0.95],[0.95,0.95],
 ];
 let calibIdx = 0;
 let calibTimer = null;
@@ -207,7 +207,7 @@ function showCalibPoint() {
       document.getElementById("calib-instruction").textContent = "Hold still…";
       const [sx, sy] = CALIB_PTS[calibIdx];
       socket.emit("calib_start_point", { x: sx, y: sy });
-      calibTimer = setTimeout(() => socket.emit("calib_commit_point"), 1200);
+      calibTimer = setTimeout(() => socket.emit("calib_commit_point"), 1800);
     }
   };
   tick();
