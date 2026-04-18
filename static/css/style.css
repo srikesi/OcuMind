@@ -86,7 +86,7 @@ body {
 .mode-picker label { font-size: 0.82rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
 .mode-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
-.mode-btn, .dur-btn {
+.mode-btn, .dur-btn, .speed-btn {
   padding: 7px 14px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -96,8 +96,8 @@ body {
   font-size: 0.85rem;
   transition: all 0.15s;
 }
-.mode-btn:hover, .dur-btn:hover { border-color: var(--accent); color: var(--accent); }
-.mode-btn.active, .dur-btn.active { background: rgba(56,189,248,0.12); border-color: var(--accent); color: var(--accent); }
+.mode-btn:hover, .dur-btn:hover, .speed-btn:hover { border-color: var(--accent); color: var(--accent); }
+.mode-btn.active, .dur-btn.active, .speed-btn.active { background: rgba(56,189,248,0.12); border-color: var(--accent); color: var(--accent); }
 
 .welcome-actions { display: flex; gap: 12px; }
 

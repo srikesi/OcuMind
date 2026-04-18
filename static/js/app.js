@@ -23,6 +23,7 @@ const state = {
   screen: "welcome",
   mode: "circular",
   duration: 60,
+  speed: 1.0,
   calibrated: false,
   gazeX: 0.5, gazeY: 0.5,
   gazeDetected: false,
@@ -119,6 +120,7 @@ const btnSkip      = document.getElementById("btn-skip-calib");
 const btnHistory   = document.getElementById("btn-history");
 const modeButtons  = document.querySelectorAll(".mode-btn");
 const durButtons   = document.querySelectorAll(".dur-btn");
+const speedButtons = document.querySelectorAll(".speed-btn");
 
 modeButtons.forEach(btn => {
   btn.addEventListener("click", () => {
@@ -133,6 +135,14 @@ durButtons.forEach(btn => {
     durButtons.forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     state.duration = parseInt(btn.dataset.sec, 10);
+  });
+});
+
+speedButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    speedButtons.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.speed = parseFloat(btn.dataset.speed);
   });
 });
 
@@ -304,13 +314,28 @@ function drawCalibCanvas(idx, phase) {
 }
 
 const patterns = {
-  circular: t => ({ x: 0.5 + 0.35 * Math.cos(t * 0.6), y: 0.5 + 0.28 * Math.sin(t * 0.6), moving: true }),
-  linear: t => { const p = (t * 0.25) % 2; return { x: 0.1 + (p < 1 ? p : 2 - p) * 0.8, y: 0.5, moving: true }; },
-  figure8: t => ({ x: 0.5 + 0.38 * Math.sin(t * 0.5), y: 0.5 + 0.22 * Math.sin(t), moving: true }),
+  circular: t => ({ 
+    x: 0.5 + 0.35 * Math.cos(t * 0.6 * state.speed), 
+    y: 0.5 + 0.28 * Math.sin(t * 0.6 * state.speed), 
+    moving: true 
+  }),
+  linear: t => { 
+    const p = (t * 0.25 * state.speed) % 2; 
+    return { x: 0.1 + (p < 1 ? p : 2 - p) * 0.8, y: 0.5, moving: true }; 
+  },
+  figure8: t => ({ 
+    x: 0.5 + 0.38 * Math.sin(t * 0.5 * state.speed), 
+    y: 0.5 + 0.22 * Math.sin(t * state.speed), 
+    moving: true 
+  }),
   random: (() => {
     let nx = 0.5, ny = 0.5, last = 0;
     return t => {
-      if (t - last > 1.5 + Math.random() * 2) { nx = 0.15 + Math.random() * 0.7; ny = 0.15 + Math.random() * 0.7; last = t; }
+      if (t - last > (1.5 + Math.random() * 2) / state.speed) { 
+        nx = 0.15 + Math.random() * 0.7; 
+        ny = 0.15 + Math.random() * 0.7; 
+        last = t; 
+      }
       return { x: nx, y: ny, moving: false };
     };
   })(),
