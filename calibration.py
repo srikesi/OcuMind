@@ -38,9 +38,13 @@ class CalibrationManager:
         """
         Fit polynomial regression from raw gaze → screen coords.
         Returns True if successful.
-        Requires at least (degree+1)^2 samples.
+
+        Degree-2 needs 6 basis features (1, x, y, x², xy, y²), so we
+        require at least 6 samples — and realistically 9+ for a good
+        fit. The calibration UI collects 9 points which is ideal.
         """
-        if len(self._samples) < 4:
+        min_samples = (self.degree + 1) * (self.degree + 2) // 2
+        if len(self._samples) < min_samples:
             return False
 
         raw    = np.array([s["raw"]    for s in self._samples])
