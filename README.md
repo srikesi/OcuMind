@@ -22,7 +22,7 @@ OcuMind is particularly relevant for individuals experiencing impairments in eye
 - Traumatic Brain Injury (TBI) affecting gaze stability  
 - General neurocognitive fatigue or attention disorders  
 
-> Note: This application is **not a diagnostic tool**. It is intended for training and monitoring visual-motor function.
+> **Note:** This application is **not a diagnostic tool**. It is intended for training, monitoring visual-motor function, and offering preliminary data that may assist in clinical assessment.
 
 ---
 
