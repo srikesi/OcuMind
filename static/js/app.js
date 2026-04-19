@@ -129,8 +129,8 @@ btnCalibrate.addEventListener("click", () => {
 function runCountdown(callback) {
   const overlay = document.getElementById("countdown-overlay");
   const text = document.getElementById("countdown-text");
-  if (!overlay) return callback();
   overlay.classList.remove("hidden");
+  
   let count = 3;
   const tick = () => {
     if (count > 0) {

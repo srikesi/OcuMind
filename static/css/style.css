@@ -110,7 +110,7 @@ body {
   background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 44px 52px;
   max-width: 540px; width: 92%; display: flex; flex-direction: column; gap: 28px; box-shadow: 0 24px 64px rgba(0,0,0,0.5);
 }
-.results-large { max-width: 600px; } /* Increased width for better chart layout */
+.results-large { max-width: 600px; }
 .results-card h2 { font-size: 1.5rem; font-weight: 800; }
 .results-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .res-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 10px; text-align: center; }
@@ -175,13 +175,20 @@ body {
 .swatch-green  { background: var(--green); box-shadow: 0 0 24px var(--green); }
 .swatch-pink   { background: var(--target); box-shadow: 0 0 24px var(--target); }
 
-/* Countdown */
-.countdown-card {
-  background: var(--card); border: 1px solid var(--accent); box-shadow: 0 0 40px rgba(56, 189, 248, 0.4);
-  width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  animation: pulse 1s infinite;
+/* ── Countdown Timer ─────────────────────────────────────────── */
+#countdown-text {
+  font-size: 12rem;
+  font-weight: 900;
+  color: var(--accent);
+  text-shadow: 0 0 40px rgba(56, 189, 248, 0.4);
+  animation: countdown-pop 1s ease-out infinite;
 }
-#countdown-text { font-size: 4rem; font-weight: 800; color: #fff; }
+
+@keyframes countdown-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  20% { transform: scale(1.1); opacity: 1; }
+  80% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
