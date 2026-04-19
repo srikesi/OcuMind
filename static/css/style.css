@@ -136,7 +136,17 @@ body {
   background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 32px;
   max-width: 520px; width: 92%; display: flex; flex-direction: column; gap: 16px;
   max-height: 90vh; overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+  position: relative;
+  transition: max-width 0.3s ease, min-height 0.3s ease;
 }
+
+.modal-card.compact-step {
+  max-width: 400px;
+}
+.instruction-container.compact-step {
+  min-height: 280px; 
+}
+
 .modal-large { max-width: 600px; }
 .modal-card h3 { font-size: 1.3rem; font-weight: 700; margin-bottom: -4px;}
 

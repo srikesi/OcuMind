@@ -60,6 +60,8 @@ const instrCards  = document.querySelectorAll(".instr-card");
 const nextButtons = document.querySelectorAll(".next-instr");
 let currentInstrStep = 0;
 
+const instrContainer = instrModal.querySelector('.instruction-container');
+
 function resizeCanvases() {
   calibCanvas.width    = window.innerWidth;
   calibCanvas.height   = window.innerHeight;
@@ -111,6 +113,11 @@ nextButtons.forEach(btn => {
   btn.addEventListener("click", () => {
     instrCards[currentInstrStep].classList.remove("active");
     currentInstrStep++;
+    
+    if (currentInstrStep > 0) {
+      instrContainer.classList.remove("compact-step");
+    }
+
     if (instrCards[currentInstrStep]) {
         instrCards[currentInstrStep].classList.add("active");
     }
@@ -119,11 +126,40 @@ nextButtons.forEach(btn => {
 
 btnCalibrate.addEventListener("click", () => {
   currentInstrStep = 0;
+  
+  instrContainer.classList.add("compact-step");
+
   instrCards.forEach((card, index) => {
     if (index === 0) card.classList.add("active");
     else card.classList.remove("active");
   });
   instrModal.classList.remove("hidden");
+});
+
+// Close modals when clicking strictly on the background overlay
+instrModal.addEventListener("click", (e) => {
+  if (e.target === instrModal) {
+    instrModal.classList.add("hidden");
+  }
+});
+document.getElementById("modal-history").addEventListener("click", (e) => {
+  const historyModal = document.getElementById("modal-history");
+  if (e.target === historyModal) {
+    historyModal.classList.add("hidden");
+  }
+});
+
+// Global Escape key listener to close modals
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (!instrModal.classList.contains("hidden")) {
+      instrModal.classList.add("hidden");
+    }
+    const historyModal = document.getElementById("modal-history");
+    if (historyModal && !historyModal.classList.contains("hidden")) {
+      historyModal.classList.add("hidden");
+    }
+  }
 });
 
 function runCountdown(callback) {
@@ -177,7 +213,6 @@ socket.on("camera_ready", ({ ok, error }) => {
 
 const target = { x: 0.5, y: 0.5, moving: true };
 
-// REVERTED to Old Gaze Tracking Logic for perfect scoring & tight magnetism
 socket.on("gaze_raw", (data) => {
   state.gazeDetected = data.detected;
   if (!data.detected) return;
