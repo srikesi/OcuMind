@@ -16,6 +16,7 @@ from gaze        import GazeTracker
 from calibration import CalibrationManager
 from metrics     import MetricsEngine
 from session     import SessionManager
+from insights    import InsightEngine
 
 
 # ------------------------------------------------------------------ #
@@ -29,27 +30,23 @@ tracker  = GazeTracker()
 calib    = CalibrationManager()
 engine   = MetricsEngine()
 session  = SessionManager()
+insights = InsightEngine()
 
 # Global state
 _state = {
-    "streaming":  False,   # gaze broadcast loop running
-    "in_session": False,   # training session active
+    "streaming":  False,
+    "in_session": False,
     "session_mode": "circular",
     "calibrated": False,
-    "calib_collecting": False,   # currently collecting a calib point
-    "calib_point": None,         # (screen_x, screen_y) of current point
-    "calib_buf":  [],            # raw gaze samples for current point
-    "calib_buf_target": 50,      # samples to collect per point (robust mean keeps inliers)
+    "calib_collecting": False,
+    "calib_point": None,
+    "calib_buf":  [],
+    "calib_buf_target": 50,
 }
-
-# ------------------------------------------------------------------ #
-#  Routes                                                              #
-# ------------------------------------------------------------------ #
 
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/api/status")
 def status():
@@ -61,11 +58,9 @@ def status():
                       if tracker.cap else False,
     })
 
-
 @app.route("/api/sessions")
 def list_sessions():
     return jsonify(session.list_sessions())
-
 
 @app.route("/api/export/<session_id>/<fmt>")
 def export_session(session_id, fmt):
@@ -75,22 +70,14 @@ def export_session(session_id, fmt):
         path = session.export_csv()
     return send_file(path, as_attachment=True)
 
-
-# ------------------------------------------------------------------ #
-#  SocketIO events                                                     #
-# ------------------------------------------------------------------ #
-
 @socketio.on("connect")
 def on_connect():
-    print("[SocketIO] Client connected")
     if not _state["streaming"]:
         _start_gaze_stream()
 
-
 @socketio.on("disconnect")
 def on_disconnect():
-    print("[SocketIO] Client disconnected")
-
+    pass
 
 @socketio.on("start_camera")
 def on_start_camera():
@@ -106,53 +93,37 @@ def on_start_camera():
     if not _state["streaming"]:
         _start_gaze_stream()
 
-
 @socketio.on("stop_camera")
 def on_stop_camera():
     tracker.stop()
     _state["streaming"] = False
 
-
 # ---- Calibration ---- #
 
 @socketio.on("calib_start_point")
 def on_calib_start_point(data):
-    """
-    Frontend says 'user is now looking at screen position (sx, sy)'.
-    We collect ~30 gaze frames then average them.
-    """
     _state["calib_collecting"] = True
     _state["calib_point"]      = (data["x"], data["y"])
     _state["calib_buf"]        = []
 
-
 @socketio.on("calib_commit_point")
 def on_calib_commit_point():
-    """Robustly aggregate collected samples and add to CalibrationManager.
-
-    Uses median-based outlier rejection: keep only samples within ~1
-    median absolute deviation of the median. Protects against blinks
-    or saccades during the collection window.
-    """
     import numpy as np
     buf = _state["calib_buf"]
     if buf and len(buf) >= 5:
-        arr = np.array(buf)                       # shape (N, 2)
+        arr = np.array(buf)
         med = np.median(arr, axis=0)
         dists = np.linalg.norm(arr - med, axis=1)
         mad = np.median(dists) + 1e-6
-        keep = arr[dists < 2.5 * mad]             # reject >2.5 MAD outliers
+        keep = arr[dists < 2.5 * mad]
         if len(keep) < 3:
-            keep = arr                            # fall back if too aggressive
+            keep = arr
         rx, ry = float(np.mean(keep[:, 0])), float(np.mean(keep[:, 1]))
         sx, sy = _state["calib_point"]
         calib.add_sample(sx, sy, rx, ry)
-        print(f"[OcuMind] calib point ({sx:.2f},{sy:.2f}): "
-              f"{len(keep)}/{len(buf)} samples kept")
     _state["calib_collecting"] = False
     _state["calib_buf"]        = []
     emit("calib_point_done", {"n": calib.sample_count()})
-
 
 @socketio.on("calib_finish")
 def on_calib_finish():
@@ -160,13 +131,11 @@ def on_calib_finish():
     _state["calibrated"] = ok
     emit("calib_result", {"ok": ok, "n_samples": calib.sample_count()})
 
-
 @socketio.on("calib_reset")
 def on_calib_reset():
     calib.reset()
     _state["calibrated"] = False
     emit("calib_reset_done", {})
-
 
 # ---- Training session ---- #
 
@@ -179,13 +148,8 @@ def on_session_start(data):
     session.start(mode)
     emit("session_started", {"mode": mode})
 
-
 @socketio.on("session_frame")
 def on_session_frame(data):
-    """
-    Frontend sends current target position each animation frame.
-    We fuse with latest gaze, compute metrics, and emit back.
-    """
     if not _state["in_session"]:
         return
 
@@ -193,7 +157,6 @@ def on_session_frame(data):
     if not gaze["detected"]:
         return
 
-    # Apply calibration mapping
     if _state["calibrated"]:
         cx, cy = calib.map(gaze["x"], gaze["y"])
     else:
@@ -213,35 +176,30 @@ def on_session_frame(data):
         **snap,
     })
 
-
 @socketio.on("session_stop")
 def on_session_stop():
     _state["in_session"] = False
     summary = session.finish()
+    
+    # Run comprehensive holistic clinical analysis
+    clinical_data = insights.analyze_session(session.frames, session.mode)
+    
+    if "error" not in clinical_data:
+        summary["clinical_report"] = clinical_data["report"]
+        # REMOVED: summary["clinical_flags"] = clinical_data["flags"]
+        
     emit("session_summary", summary)
 
-
-# ------------------------------------------------------------------ #
-#  Background gaze broadcast loop                                      #
-# ------------------------------------------------------------------ #
-
 def _gaze_broadcast():
-    """
-    Runs in a background greenlet.
-    Broadcasts raw gaze ~30 times/sec so the frontend can render
-    the gaze dot even outside a training session (calibration, idle).
-    """
     _state["streaming"] = True
     while _state["streaming"]:
         gaze = tracker.get_gaze()
 
-        # Feed calibration buffer if active
         if _state["calib_collecting"] and gaze["detected"]:
             buf = _state["calib_buf"]
             if len(buf) < _state["calib_buf_target"]:
                 buf.append((gaze["x"], gaze["y"]))
             else:
-                # Auto-commit when buffer full
                 socketio.emit("calib_auto_commit", {"ready": True})
 
         if gaze["detected"]:
@@ -257,18 +215,12 @@ def _gaze_broadcast():
         else:
             socketio.emit("gaze_raw", {"detected": False})
 
-        time.sleep(1 / 30)   # ~30 Hz
-
+        time.sleep(1 / 30)
 
 def _start_gaze_stream():
     if not (tracker.cap and tracker.cap.isOpened()):
         tracker.start()
     socketio.start_background_task(_gaze_broadcast)
-
-
-# ------------------------------------------------------------------ #
-#  Entry point                                                         #
-# ------------------------------------------------------------------ #
 
 if __name__ == "__main__":
     print("=" * 55)

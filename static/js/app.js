@@ -34,13 +34,8 @@ const state = {
   lastGazeTime: 0,
 };
 
-// Replace local mock metrics engine with a state object synced via WebSocket
 let latestMetrics = {
-  accuracy: 0,
-  smoothness: 0,
-  stability: 0,
-  score: 0,
-  latency_ms: 0
+  accuracy: 0, smoothness: 0, stability: 0, score: 0, latency_ms: 0
 };
 
 const screens = {
@@ -125,11 +120,8 @@ nextButtons.forEach(btn => {
 btnCalibrate.addEventListener("click", () => {
   currentInstrStep = 0;
   instrCards.forEach((card, index) => {
-    if (index === 0) {
-        card.classList.add("active");
-    } else {
-        card.classList.remove("active");
-    }
+    if (index === 0) card.classList.add("active");
+    else card.classList.remove("active");
   });
   instrModal.classList.remove("hidden");
 });
@@ -137,8 +129,7 @@ btnCalibrate.addEventListener("click", () => {
 function runCountdown(callback) {
   const overlay = document.getElementById("countdown-overlay");
   const text = document.getElementById("countdown-text");
-  if (!overlay) return callback(); // Safety if element is missing
-  
+  if (!overlay) return callback();
   overlay.classList.remove("hidden");
   let count = 3;
   const tick = () => {
@@ -186,6 +177,7 @@ socket.on("camera_ready", ({ ok, error }) => {
 
 const target = { x: 0.5, y: 0.5, moving: true };
 
+// REVERTED to Old Gaze Tracking Logic for perfect scoring & tight magnetism
 socket.on("gaze_raw", (data) => {
   state.gazeDetected = data.detected;
   if (!data.detected) return;
@@ -210,7 +202,6 @@ socket.on("gaze_raw", (data) => {
   placeGazeDots(gx, gy);
 });
 
-// Update UI directly from backend's robust python calculations!
 socket.on("metrics_update", data => {
   if (!state.sessionActive) return;
   latestMetrics = data;
@@ -237,8 +228,7 @@ function placeGazeDots(nx, ny) {
 }
 
 const CALIB_PTS = [[0.1,0.1],[0.5,0.1],[0.9,0.1],[0.1,0.5],[0.5,0.5],[0.9,0.5],[0.1,0.9],[0.5,0.9],[0.9,0.9]];
-let calibIdx = 0;
-let calibTimer = null;
+let calibIdx = 0; let calibTimer = null;
 
 function startCalibration() {
   socket.emit("calib_reset");
@@ -269,8 +259,7 @@ function showCalibPoint() {
 }
 
 socket.on("calib_point_done", () => {
-  calibIdx++; 
-  setTimeout(showCalibPoint, 800); 
+  calibIdx++; setTimeout(showCalibPoint, 800); 
 });
 
 socket.on("calib_auto_commit", () => { clearTimeout(calibTimer); socket.emit("calib_commit_point"); });
@@ -285,12 +274,8 @@ socket.on("calib_result", ({ ok }) => {
     setTimeout(() => playSound(659, "sine", 0.6), 150);
     setTimeout(() => playSound(784, "sine", 0.6), 300);
     setTimeout(() => playSound(1046, "sine", 1.2), 450);
-    
     state.calibrated = true;
-    setTimeout(() => {
-      showScreen("session");
-      runCountdown(startSession);
-    }, 1200);
+    setTimeout(() => { showScreen("session"); runCountdown(startSession); }, 1200);
   } else {
     setTimeout(() => showScreen("welcome"), 2000);
   }
@@ -300,72 +285,26 @@ function drawCalibCanvas(idx, phase) {
   const W = calibCanvas.width, H = calibCanvas.height;
   calibCtx.clearRect(0, 0, W, H);
   CALIB_PTS.forEach(([nx, ny], i) => {
-    calibCtx.beginPath();
-    calibCtx.arc(nx * W, ny * H, 6, 0, Math.PI * 2);
+    calibCtx.beginPath(); calibCtx.arc(nx * W, ny * H, 6, 0, Math.PI * 2);
     calibCtx.fillStyle = i < idx ? "#34d399" : i === idx && phase === "active" ? "#38bdf8" : i === idx ? "#fbbf24" : "#2a3a55";
     calibCtx.fill();
   });
   const [nx, ny] = CALIB_PTS[idx];
-  calibCtx.beginPath();
-  calibCtx.arc(nx * W, ny * H, phase === "active" ? 18 : 24, 0, Math.PI * 2);
+  calibCtx.beginPath(); calibCtx.arc(nx * W, ny * H, phase === "active" ? 18 : 24, 0, Math.PI * 2);
   calibCtx.strokeStyle = phase === "active" ? "#38bdf8" : "#fbbf24";
-  calibCtx.lineWidth = 2;
-  calibCtx.stroke();
+  calibCtx.lineWidth = 2; calibCtx.stroke();
 }
 
 const patterns = {
-  circular: t => ({ 
-    x: 0.5 + 0.35 * Math.cos(t * 0.6 * state.speed), 
-    y: 0.5 + 0.28 * Math.sin(t * 0.6 * state.speed), 
-    moving: true 
-  }),
-  horizontal: t => { 
-    const p = (t * 0.25 * state.speed) % 2; 
-    return { x: 0.1 + (p < 1 ? p : 2 - p) * 0.8, y: 0.5, moving: true }; 
-  },
-  vertical: t => { 
-    const p = (t * 0.25 * state.speed) % 2; 
-    return { x: 0.5, y: 0.1 + (p < 1 ? p : 2 - p) * 0.8, moving: true }; 
-  },
-  figure8: t => ({ 
-    x: 0.5 + 0.38 * Math.sin(t * 0.5 * state.speed), 
-    y: 0.5 + 0.22 * Math.sin(t * state.speed), 
-    moving: true 
-  }),
-  zigzag: t => { 
-    const p = (t * 0.2 * state.speed) % 2; 
-    const dir = p < 1 ? p : 2 - p;
-    return { x: 0.1 + dir * 0.8, y: 0.5 + 0.3 * Math.sin(t * 3 * state.speed), moving: true }; 
-  },
-  speed_changes: t => {
-    const tWarp = t * state.speed + 0.6 * Math.sin(t * state.speed * 1.5);
-    return { 
-      x: 0.5 + 0.35 * Math.cos(tWarp * 0.6), 
-      y: 0.5 + 0.28 * Math.sin(tWarp * 0.6), 
-      moving: true 
-    };
-  },
-  random: (() => {
-    let nx = 0.5, ny = 0.5, last = 0;
-    return t => {
-      if (t - last > (1.5 + Math.random() * 2) / state.speed) { 
-        nx = 0.15 + Math.random() * 0.7; 
-        ny = 0.15 + Math.random() * 0.7; 
-        last = t; 
-      }
-      return { x: nx, y: ny, moving: false };
-    };
-  })(),
-  fixation: t => ({ 
-    x: 0.5, 
-    y: 0.5, 
-    moving: false 
-  }),
-  follow_color: t => ({
-    x: 0.5 + 0.3 * Math.cos(t * 0.7 * state.speed) + 0.1 * Math.sin(t * 0.3 * state.speed), 
-    y: 0.5 + 0.2 * Math.sin(t * 0.5 * state.speed) + 0.1 * Math.cos(t * 0.8 * state.speed), 
-    moving: true 
-  })
+  circular: t => ({ x: 0.5 + 0.35 * Math.cos(t * 0.6 * state.speed), y: 0.5 + 0.28 * Math.sin(t * 0.6 * state.speed), moving: true }),
+  horizontal: t => { const p = (t * 0.25 * state.speed) % 2; return { x: 0.1 + (p < 1 ? p : 2 - p) * 0.8, y: 0.5, moving: true }; },
+  vertical: t => { const p = (t * 0.25 * state.speed) % 2; return { x: 0.5, y: 0.1 + (p < 1 ? p : 2 - p) * 0.8, moving: true }; },
+  figure8: t => ({ x: 0.5 + 0.38 * Math.sin(t * 0.5 * state.speed), y: 0.5 + 0.22 * Math.sin(t * state.speed), moving: true }),
+  zigzag: t => { const p = (t * 0.2 * state.speed) % 2; const dir = p < 1 ? p : 2 - p; return { x: 0.1 + dir * 0.8, y: 0.5 + 0.3 * Math.sin(t * 3 * state.speed), moving: true }; },
+  speed_changes: t => { const tWarp = t * state.speed + 0.6 * Math.sin(t * state.speed * 1.5); return { x: 0.5 + 0.35 * Math.cos(tWarp * 0.6), y: 0.5 + 0.28 * Math.sin(tWarp * 0.6), moving: true }; },
+  random: (() => { let nx = 0.5, ny = 0.5, last = 0; return t => { if (t - last > (1.5 + Math.random() * 2) / state.speed) { nx = 0.15 + Math.random() * 0.7; ny = 0.15 + Math.random() * 0.7; last = t; } return { x: nx, y: ny, moving: false }; }; })(),
+  fixation: t => ({ x: 0.5, y: 0.5, moving: false }),
+  follow_color: t => ({ x: 0.5 + 0.3 * Math.cos(t * 0.7 * state.speed) + 0.1 * Math.sin(t * 0.3 * state.speed), y: 0.5 + 0.2 * Math.sin(t * 0.5 * state.speed) + 0.1 * Math.cos(t * 0.8 * state.speed), moving: true })
 };
 
 let animFrame = null; let stopTimer = null;
@@ -374,8 +313,6 @@ function startSession() {
   state.sessionActive = true; 
   state.sessionStart = performance.now(); 
   state.scoreHistory = [];
-  
-  // Reset Latest Metrics
   latestMetrics = { accuracy: 0, smoothness: 0, stability: 0, score: 0, latency_ms: 0 };
   updateMetricsPanel(latestMetrics);
 
@@ -473,12 +410,9 @@ function updateMetricsPanel(d) {
   setBar("accuracy", d.accuracy, d.accuracy); 
   setBar("smoothness", d.smoothness, d.smoothness); 
   setBar("stability", d.stability, d.stability);
-  
-  // Use the real backend latency calculated from the stream
   document.getElementById("val-latency").textContent = d.latency_ms !== undefined && d.latency_ms > 0 
       ? Math.round(d.latency_ms) + " ms" 
       : "live";
-      
   drawScoreRing(d.score); 
   document.getElementById("score-number").textContent = Math.round(d.score);
   drawSparkline();
@@ -525,6 +459,52 @@ function showResults(summary) {
   document.getElementById("res-lat").textContent    = (summary.latency_ms   ?? latestMetrics.latency_ms ?? 0).toFixed(0) + " ms";
   document.getElementById("res-dur").textContent    = (summary.duration_s   ?? "—") + " s";
   state.sessionId = summary.session_id;
+
+  const container = document.getElementById("clinical-insight-container");
+  if (container && summary.clinical_report) {
+      const r = summary.clinical_report;
+      
+      let bg = r.conclusion.status === 'good' ? 'rgba(52, 211, 153, 0.1)' : r.conclusion.status === 'warning' ? 'rgba(251, 191, 36, 0.1)' : 'rgba(248, 113, 113, 0.1)';
+      let border = r.conclusion.status === 'good' ? '#34d399' : r.conclusion.status === 'warning' ? '#fbbf24' : '#f87171';
+      let titleColor = r.conclusion.status === 'good' ? '#10b981' : r.conclusion.status === 'warning' ? '#f59e0b' : '#ef4444';
+
+      let html = `
+          <div style="text-align: center; padding: 25px; background: ${bg}; border: 2px solid ${border}; border-radius: 8px; margin-bottom: 30px;">
+              <h2 style="color: ${titleColor}; margin: 0 0 10px 0; font-size: 1.8rem;">${r.conclusion.title}</h2>
+              <p style="margin: 0; color: #e2e8f0; font-size: 1.15rem; line-height: 1.5;">${r.conclusion.subtitle}</p>
+          </div>
+
+          <h3 style="color: #38bdf8; margin-bottom: 15px; font-size: 1.3rem;">Understanding Your Session</h3>
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 30px;">
+              ${r.stats.map(s => `
+                  <div style="background: rgba(15, 23, 42, 0.5); padding: 15px; border-left: 4px solid ${s.color === 'green' ? '#34d399' : s.color === 'red' ? '#f87171' : '#fbbf24'}; border-radius: 4px;">
+                      <strong style="color: #f8fafc; font-size: 1.1rem; display: block; margin-bottom: 5px;">${s.name}</strong>
+                      <span style="color: #94a3b8; font-size: 1rem; line-height: 1.5;">${s.desc}</span>
+                  </div>
+              `).join('')}
+          </div>
+
+          <h3 style="color: #64748b; margin-bottom: 15px; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.5px;">Clinical Risk Analysis</h3>
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 35px;">
+              ${r.diseases.map(d => `
+                  <div style="background: rgba(15, 23, 42, 0.3); padding: 15px; border-left: 4px solid ${d.level === 'high' ? '#f87171' : d.level === 'med' ? '#fbbf24' : '#34d399'}; border-radius: 4px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                          <strong style="color: #f8fafc; font-size: 1.1rem;">${d.name}</strong>
+                          <span style="color: ${d.level === 'high' ? '#f87171' : '#f8fafc'}; font-size: 1.2rem; font-weight: bold;">${d.pct}%</span>
+                      </div>
+                      <span style="color: #cbd5e1; font-size: 0.95rem; line-height: 1.4; display: block;">${d.desc}</span>
+                  </div>
+              `).join('')}
+          </div>
+
+          <h3 style="color: #38bdf8; margin-bottom: 15px; font-size: 1.3rem;">Recommendations for Next Time</h3>
+          <ul style="color: #e2e8f0; font-size: 1.05rem; padding-left: 20px; line-height: 1.6; margin: 0;">
+              ${r.recommendations.map(rec => `<li style="margin-bottom: 10px;">${rec}</li>`).join('')}
+          </ul>
+      `;
+      container.innerHTML = html;
+      container.style.display = 'block';
+  }
 }
 
 document.getElementById("btn-new-session").addEventListener("click", () => showScreen("welcome"));

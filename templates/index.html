@@ -22,7 +22,7 @@
 
     <div id="camera-status" class="status-badge warn">Starting camera…</div>
 
-    <div class="mode-picker">
+    <div class="mode-picker" style="margin-top: 15px;">
       <label>Exercise mode</label>
       <div class="mode-buttons">
         <button class="mode-btn active" data-mode="circular">Circular</button>
@@ -137,8 +137,9 @@
 </div>
 
 <div id="screen-results" class="screen">
-  <div class="results-card">
+  <div class="results-card" style="max-width: 750px; max-height: 90vh; overflow-y: auto;">
     <h2>Session Complete</h2>
+    
     <div class="results-grid">
       <div class="res-item"><div class="res-val" id="res-score">—</div><div class="res-lbl">Score</div></div>
       <div class="res-item"><div class="res-val" id="res-acc">—</div><div class="res-lbl">Accuracy</div></div>
@@ -147,7 +148,11 @@
       <div class="res-item"><div class="res-val" id="res-lat">—</div><div class="res-lbl">Latency</div></div>
       <div class="res-item"><div class="res-val" id="res-dur">—</div><div class="res-lbl">Duration</div></div>
     </div>
-    <div class="results-actions">
+
+    <div id="clinical-insight-container" style="display:none; margin-top: 25px; padding: 25px; background: rgba(30, 41, 59, 0.6); border-radius: 8px;">
+        </div>
+
+    <div class="results-actions" style="margin-top: 25px;">
       <button id="btn-new-session" class="btn-primary">New Session</button>
       <button id="btn-export-json" class="btn-secondary">Export JSON</button>
       <button id="btn-export-csv"  class="btn-secondary">Export CSV</button>
